@@ -80,7 +80,7 @@ cd scripts && python fantasy.py roster
 | `standings` | `league.standings()` |
 | `matchup` | `team.matchup(week)` |
 | `scoreboard` | `league.matchups(week)` |
-| `players` | `league.free_agents(position)` / `league.player_details(name)` / `yahoo_api.fetch_players_sorted()` (with `--sort`, `--status`, or `--status ALL`) |
+| `players` | `league.free_agents(position)` / `league.player_details(name)` / `yahoo_api.fetch_players_sorted()` (with `--sort`, `--status`, or `--status ALL`). With `--position`, also fetches `league.stat_categories()` + `league.player_stats()` to display stat columns (batting or pitching based on position type). `--stat-season` controls which season's stats to show (auto-detects pre-season → previous year). |
 | `draft` | `league.draft_results()` |
 | `transactions` | `league.transactions(types, count)` |
 | `injuries` | `team.roster(day=today)` filtered |
