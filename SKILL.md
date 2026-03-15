@@ -15,6 +15,13 @@ metadata: {"openclaw":{"emoji":"⚾","requires":{"bins":["python3"]}}}
 
 Manage your Yahoo Fantasy Baseball league: view data, optimize your daily lineup, and execute roster changes via the Yahoo Fantasy Sports API.
 
+## Requirements
+
+- Python 3.10+
+- `yahoo_fantasy_api` — Yahoo Fantasy Sports API wrapper
+
+**Installation:** No manual `pip install` needed. On first run, `yahoo-fantasy-baseball.py` creates a local `.deps/` virtual environment inside the skill directory and installs dependencies from `requirements.txt`. Subsequent runs reuse the existing venv. To force a clean reinstall, delete the `.deps/` directory and run any command again.
+
 ## Setup
 
 ### 1. Create a Yahoo Developer App
