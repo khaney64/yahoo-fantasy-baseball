@@ -1,0 +1,445 @@
+"""Yahoo Fantasy Sports API wrapper using yahoo-fantasy-api.
+
+Handles OAuth authentication, config persistence, and league/team construction.
+Credentials and config are stored in ~/.openclaw/credentials/yahoo-fantasy/.
+"""
+
+import json
+import os
+import sys
+from pathlib import Path
+
+CRED_DIR = Path.home() / ".openclaw" / "credentials" / "yahoo-fantasy"
+CONFIG_FILE = CRED_DIR / "yahoo-fantasy.json"
+OAUTH_FILE = CRED_DIR / "oauth2.json"
+LEGACY_ENV_FILE = CRED_DIR / ".env"
+
+GAME_CODE = "mlb"
+
+
+def _ensure_cred_dir():
+    """Create credential directory if it doesn't exist."""
+    CRED_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def load_config():
+    """Load saved config (league_id, team_id, season)."""
+    if CONFIG_FILE.exists():
+        with open(CONFIG_FILE) as f:
+            return json.load(f)
+    return {}
+
+
+def save_config(config):
+    """Save config to disk."""
+    _ensure_cred_dir()
+    with open(CONFIG_FILE, "w") as f:
+        json.dump(config, f, indent=2)
+
+
+def _migrate_legacy_env():
+    """Auto-migrate YFPY .env credentials to oauth2.json format.
+
+    If oauth2.json already exists, does nothing. If .env exists with
+    YAHOO_CONSUMER_KEY and YAHOO_CONSUMER_SECRET, creates oauth2.json
+    from those values.
+    """
+    if OAUTH_FILE.exists():
+        return
+    if not LEGACY_ENV_FILE.exists():
+        return
+
+    creds = {}
+    with open(LEGACY_ENV_FILE) as f:
+        for line in f:
+            line = line.strip()
+            if "=" in line and not line.startswith("#"):
+                key, _, value = line.partition("=")
+                creds[key.strip()] = value.strip()
+
+    consumer_key = creds.get("YAHOO_CONSUMER_KEY")
+    consumer_secret = creds.get("YAHOO_CONSUMER_SECRET")
+
+    if consumer_key and consumer_secret:
+        oauth_data = {
+            "consumer_key": consumer_key,
+            "consumer_secret": consumer_secret,
+        }
+        # Carry over tokens if present (YFPY stored them in .env too)
+        access_token = creds.get("YAHOO_ACCESS_TOKEN")
+        refresh_token = creds.get("YAHOO_REFRESH_TOKEN")
+        token_type = creds.get("YAHOO_TOKEN_TYPE")
+        if access_token and refresh_token:
+            oauth_data["access_token"] = access_token
+            oauth_data["refresh_token"] = refresh_token
+            oauth_data["token_type"] = token_type or "bearer"
+
+        with open(OAUTH_FILE, "w") as f:
+            json.dump(oauth_data, f, indent=2)
+        print(f"Migrated credentials from .env to {OAUTH_FILE}", file=sys.stderr)
+
+
+def run_auth():
+    """Interactive OAuth setup. Prompts for consumer key/secret, runs OAuth flow."""
+    _ensure_cred_dir()
+
+    print("Yahoo Fantasy Baseball — OAuth Setup")
+    print("=" * 45)
+    print()
+    print("You need a Yahoo Developer app to authenticate.")
+    print("1. Go to https://developer.yahoo.com/apps/")
+    print("2. Create an app (or use an existing one)")
+    print("3. Set the Redirect URI to: oob")
+    print("4. Copy the Consumer Key and Consumer Secret below")
+    print()
+
+    consumer_key = input("Consumer Key: ").strip()
+    if not consumer_key:
+        print("Error: Consumer Key is required.", file=sys.stderr)
+        sys.exit(1)
+
+    consumer_secret = input("Consumer Secret: ").strip()
+    if not consumer_secret:
+        print("Error: Consumer Secret is required.", file=sys.stderr)
+        sys.exit(1)
+
+    # Write credentials to oauth2.json for yahoo_oauth
+    oauth_data = {
+        "consumer_key": consumer_key,
+        "consumer_secret": consumer_secret,
+    }
+    with open(OAUTH_FILE, "w") as f:
+        json.dump(oauth_data, f, indent=2)
+
+    print()
+    print("Credentials saved. Starting Yahoo OAuth flow...")
+    print("A browser window will open for authorization.")
+    print()
+
+    try:
+        from yahoo_oauth import OAuth2
+        sc = OAuth2(None, None, from_file=str(OAUTH_FILE))
+        if not sc.token_is_valid():
+            print("Error: OAuth token not valid after auth flow.", file=sys.stderr)
+            sys.exit(1)
+        print("Authentication successful!")
+    except Exception as e:
+        print(f"Authentication failed: {e}", file=sys.stderr)
+        print("Check your Consumer Key/Secret and try again.", file=sys.stderr)
+        sys.exit(1)
+
+
+def _get_oauth():
+    """Return an authenticated OAuth2 session.
+
+    Attempts auto-migration from legacy .env if oauth2.json doesn't exist.
+    """
+    _migrate_legacy_env()
+
+    if not OAUTH_FILE.exists():
+        print("Error: Not authenticated. Run 'auth' first.", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        from yahoo_oauth import OAuth2
+        sc = OAuth2(None, None, from_file=str(OAUTH_FILE))
+        return sc
+    except Exception as e:
+        print(f"Error loading OAuth credentials: {e}", file=sys.stderr)
+        print("Try running 'auth' again.", file=sys.stderr)
+        sys.exit(1)
+
+
+def get_game(season=None):
+    """Return an authenticated yfa.Game instance.
+
+    Args:
+        season: Season year (int). If provided, used to filter league_ids.
+
+    Returns:
+        (yfa.Game, OAuth2) tuple.
+    """
+    sc = _get_oauth()
+    import yahoo_fantasy_api as yfa
+    gm = yfa.Game(sc, GAME_CODE)
+    return gm, sc
+
+
+def get_league(league_id, season=None):
+    """Return a yfa.League instance for the given league.
+
+    Args:
+        league_id: Yahoo league ID (numeric string, e.g. "12345").
+        season: Season year (int). If None, uses current season.
+
+    Returns:
+        yfa.League instance.
+    """
+    gm, sc = get_game(season)
+
+    # Build the full league key: {game_key}.l.{league_id}
+    if season is not None:
+        league_ids = gm.league_ids(seasons=[str(season)])
+        # Find the one matching our league_id
+        for lid in league_ids:
+            if lid.endswith(f".l.{league_id}"):
+                return gm.to_league(lid)
+        # If not found in user's leagues, construct the key manually
+        game_id = gm.game_id()
+        league_key = f"{game_id}.l.{league_id}"
+        return gm.to_league(league_key)
+    else:
+        # Current season — try user's leagues first
+        try:
+            league_ids = gm.league_ids()
+            for lid in league_ids:
+                if lid.endswith(f".l.{league_id}"):
+                    return gm.to_league(lid)
+        except Exception:
+            pass
+        # Construct key with current game_id
+        game_id = gm.game_id()
+        league_key = f"{game_id}.l.{league_id}"
+        return gm.to_league(league_key)
+
+
+def _parse_players_page(raw):
+    """Parse a raw Yahoo API players response with percent_owned and ownership.
+
+    Handles the ;out=percent_owned,ownership response format which the
+    yahoo-fantasy-api library doesn't support natively.
+
+    Returns:
+        (num_on_page, list[dict]): Count and parsed player dicts.
+    """
+    try:
+        players_data = raw['fantasy_content']['league'][1]['players']
+    except (KeyError, IndexError):
+        return (0, [])
+
+    if not players_data or players_data.get('count', 0) == 0:
+        return (0, [])
+
+    count = players_data.get('count', 0)
+    result = []
+
+    for i in range(count):
+        key = str(i)
+        if key not in players_data:
+            break
+        parts = players_data[key]['player']
+        # parts[0] = list of player info dicts, parts[1+] = subresources
+        info_list = parts[0]
+
+        plyr = {}
+        for item in info_list:
+            if not isinstance(item, dict):
+                continue
+            for k, v in item.items():
+                if k == 'name':
+                    plyr['name'] = v.get('full', '') if isinstance(v, dict) else str(v)
+                elif k == 'player_id':
+                    plyr['player_id'] = int(v)
+                elif k == 'position_type':
+                    plyr['position_type'] = v
+                elif k == 'display_position':
+                    plyr['display_position'] = v
+                elif k == 'eligible_positions':
+                    plyr['eligible_positions'] = [e['position'] for e in v if isinstance(e, dict)]
+                elif k == 'editorial_team_abbr':
+                    plyr['editorial_team_abbr'] = v
+                elif k == 'status':
+                    plyr['status'] = v
+
+        if 'status' not in plyr:
+            plyr['status'] = ''
+
+        # Parse subresource parts (percent_owned, ownership)
+        for part in parts[1:]:
+            if not isinstance(part, dict):
+                continue
+            if 'percent_owned' in part:
+                pct_data = part['percent_owned']
+                for item in pct_data:
+                    if isinstance(item, dict) and 'value' in item:
+                        plyr['percent_owned'] = int(item['value'])
+            if 'ownership' in part:
+                own = part['ownership']
+                plyr['ownership_type'] = own.get('ownership_type', '')
+                plyr['owner_team_name'] = own.get('owner_team_name', '')
+
+        # Skip players marked as not available
+        if plyr.get('status') != 'NA':
+            result.append(plyr)
+
+    return (count, result)
+
+
+def fetch_players_sorted(league, status="FA", position=None, sort=None,
+                         sort_type=None, sort_season=None):
+    """Fetch players with sort and ownership, bypassing the library's free_agents().
+
+    The yahoo-fantasy-api library doesn't expose Yahoo's sort params or ownership
+    data, so we build the URI ourselves with custom parsing.
+
+    Args:
+        league: yfa.League instance.
+        status: Player status filter — "FA", "W", "T", "A" (available=FA+W),
+                "ALL" (every player: taken + available).
+        position: Position filter — "B", "P", "C", "1B", "SS", "OF", "SP", etc.
+        sort: Sort field — "OR" (overall rank), "AR" (actual rank), "PTS" (points),
+              "NAME", or a stat_id integer.
+        sort_type: Sort period — "season", "lastweek", "lastmonth", "date".
+        sort_season: Sort season year (e.g., 2025).
+
+    Returns:
+        list[dict]: Player dicts with name, player_id, position_type,
+                    percent_owned, ownership_type, owner_team_name, etc.
+    """
+    # "ALL" is synthetic — Yahoo has no single status for all players.
+    # Fetch taken + available separately and merge by sort order.
+    if status.upper() == "ALL":
+        taken = _fetch_players_page_loop(
+            league, "T", position, sort, sort_type, sort_season)
+        available = _fetch_players_page_loop(
+            league, "A", position, sort, sort_type, sort_season)
+        # Merge: interleave by maintaining sort order.
+        # Both lists are already sorted by the API. Merge them.
+        seen = set()
+        merged = []
+        i, j = 0, 0
+        while i < len(taken) and j < len(available):
+            # Take from whichever list has the next player in order.
+            # Since both are sorted the same way, alternate picking.
+            # But we can't compare rank — just interleave taken first
+            # since top-ranked players tend to be rostered.
+            tp = taken[i]
+            tid = tp.get('player_id')
+            if tid not in seen:
+                seen.add(tid)
+                merged.append(tp)
+            i += 1
+            if j < len(available):
+                ap = available[j]
+                aid = ap.get('player_id')
+                if aid not in seen:
+                    seen.add(aid)
+                    merged.append(ap)
+                j += 1
+        # Drain remaining
+        for p in taken[i:]:
+            pid = p.get('player_id')
+            if pid not in seen:
+                seen.add(pid)
+                merged.append(p)
+        for p in available[j:]:
+            pid = p.get('player_id')
+            if pid not in seen:
+                seen.add(pid)
+                merged.append(p)
+        return merged
+
+    return _fetch_players_page_loop(
+        league, status, position, sort, sort_type, sort_season)
+
+
+def _fetch_players_page_loop(league, status, position, sort, sort_type,
+                             sort_season):
+    """Paginated fetch of players from Yahoo API with custom URI."""
+    PLAYERS_PER_PAGE = 25
+    all_players = []
+    start = 0
+
+    while True:
+        uri = f"league/{league.league_id}/players;start={start};count={PLAYERS_PER_PAGE};status={status}"
+        if position:
+            uri += f";position={position}"
+        if sort:
+            uri += f";sort={sort}"
+        if sort_type:
+            uri += f";sort_type={sort_type}"
+        if sort_season:
+            uri += f";sort_season={sort_season}"
+        uri += ";out=percent_owned,ownership"
+
+        raw = league.yhandler.get(uri)
+        num_on_page, players = _parse_players_page(raw)
+        if not players:
+            break
+        all_players.extend(players)
+        if num_on_page < PLAYERS_PER_PAGE:
+            break
+        start += int(num_on_page)
+
+    return all_players
+
+
+def get_team(league, team_key):
+    """Return a yfa.Team instance.
+
+    Args:
+        league: yfa.League instance.
+        team_key: Full team key (e.g. "422.l.12345.t.3").
+
+    Returns:
+        yfa.Team instance.
+    """
+    return league.to_team(team_key)
+
+
+def resolve_league_id(args_league, config):
+    """Resolve league ID from args or config, exit with error if missing."""
+    league_id = args_league or config.get("league_id")
+    if not league_id:
+        print("Error: No league ID. Use --league or run 'config --league <ID>'.", file=sys.stderr)
+        sys.exit(1)
+    return str(league_id)
+
+
+def resolve_team_key(league, args_team, config):
+    """Resolve team key from args, config, or auto-detect from league.
+
+    Args:
+        league: yfa.League instance.
+        args_team: Team ID from command-line args (numeric, e.g. "3").
+        config: Saved config dict.
+
+    Returns:
+        str: The full team key (e.g. "422.l.12345.t.3").
+    """
+    teams = league.teams()
+
+    if args_team:
+        # Find team by numeric ID
+        for tkey, tdata in teams.items():
+            if str(tdata.get("team_id")) == str(args_team):
+                return tkey
+        # Try constructing it
+        # team_key format: {league_key}.t.{team_id}
+        for tkey in teams:
+            if tkey.endswith(f".t.{args_team}"):
+                return tkey
+        print(f"Error: Team ID {args_team} not found in league.", file=sys.stderr)
+        sys.exit(1)
+
+    if config.get("team_id"):
+        team_id = str(config["team_id"])
+        for tkey, tdata in teams.items():
+            if str(tdata.get("team_id")) == team_id:
+                return tkey
+            if tkey.endswith(f".t.{team_id}"):
+                return tkey
+
+    # Auto-detect: use league.team_key() which returns the current user's team
+    try:
+        return league.team_key()
+    except Exception:
+        pass
+
+    # Fallback: if only one team, use it
+    if len(teams) == 1:
+        return next(iter(teams))
+
+    print("Error: Could not auto-detect your team. Use --team <ID>.", file=sys.stderr)
+    print("Run 'teams' to see team IDs.", file=sys.stderr)
+    sys.exit(1)
