@@ -28,7 +28,7 @@ Manage your Yahoo Fantasy Baseball league: view data, optimize your daily lineup
 
 1. Go to [https://developer.yahoo.com/apps/](https://developer.yahoo.com/apps/)
 2. Click "Create an App"
-3. Set **Redirect URI** to `oob`
+3. Set **Redirect URI** to `oob` (out-of-band — Yahoo displays the auth code on screen instead of redirecting to a URL)
 4. Copy the **Consumer Key** and **Consumer Secret**
 
 ### 2. Authenticate
@@ -103,7 +103,7 @@ python yahoo-fantasy-baseball.py matchup [--week N]
 python yahoo-fantasy-baseball.py scoreboard [--week N]
 
 # Players & Draft
-python yahoo-fantasy-baseball.py players [--search NAME] [--position POS] [--status FA|A|T|W|ALL] [--sort OR|AR|PTS|NAME] [--sort-type season|lastweek|lastmonth] [--count N]
+python yahoo-fantasy-baseball.py players [--search NAME] [--position POS] [--status FA|A|T|W|ALL] [--sort OR|AR|PTS|NAME|HR|ERA|...] [--sort-type season|lastweek|lastmonth] [--stat-season YEAR] [--count N]
 python yahoo-fantasy-baseball.py draft [--team ID]
 python yahoo-fantasy-baseball.py transactions [--type add,drop,trade]
 python yahoo-fantasy-baseball.py injuries
@@ -166,9 +166,61 @@ python yahoo-fantasy-baseball.py claim --player "Jake Burger" [--drop "Luis Arra
 | `--date YYYY-MM-DD` | Specific date (roster command) |
 | `--format text\|json\|discord` | Output format (default: text) |
 | `--status FA\|A\|T\|W\|ALL` | Player status filter: FA (free agents), A (available=FA+W), T (taken), W (waivers), ALL (every player) |
-| `--sort OR\|AR\|PTS\|NAME` | Sort order for players (OR=overall rank, AR=actual rank, PTS=points) |
+| `--sort OR\|AR\|PTS\|NAME\|{stat}` | Sort order for players. See stat sort reference below |
 | `--sort-type season\|lastweek\|lastmonth` | Sort period (used with --sort) |
+| `--stat-season YEAR` | Season year for stat columns (auto-detects: falls back to previous year if league hasn't started) |
 | `--confirm` | Execute write operations (without this, preview only) |
+
+### Sort Reference
+
+Built-in sort modes:
+
+| Value | Description |
+|-------|-------------|
+| `OR` | Overall Rank (preseason/projected) |
+| `AR` | Actual Rank (by real performance) |
+| `PTS` | Fantasy Points |
+| `NAME` | Alphabetical |
+
+Batting stats:
+
+| Abbrev | Description |
+|--------|-------------|
+| `R` | Runs |
+| `H` | Hits |
+| `1B` | Singles |
+| `2B` | Doubles |
+| `3B` | Triples |
+| `HR` | Home Runs |
+| `RBI` | Runs Batted In |
+| `SB` | Stolen Bases |
+| `BB` | Walks |
+| `K` | Strikeouts |
+| `AVG` | Batting Average |
+| `OBP` | On-base Percentage |
+| `SLG` | Slugging Percentage |
+| `OPS` | On-base + Slugging |
+| `AB` | At Bats |
+| `PA` | Plate Appearances |
+| `TB` | Total Bases |
+| `XBH` | Extra Base Hits |
+
+Pitching stats:
+
+| Abbrev | Description |
+|--------|-------------|
+| `W` | Wins |
+| `L` | Losses |
+| `SV` | Saves |
+| `HLD` | Holds |
+| `SV+H` | Saves + Holds |
+| `BSV` | Blown Saves |
+| `ERA` | Earned Run Average |
+| `WHIP` | Walks + Hits per Inning Pitched |
+| `IP` | Innings Pitched |
+| `QS` | Quality Starts |
+| `K9` | Strikeouts per 9 Innings |
+| `BB9` | Walks per 9 Innings |
 
 ## Output Format
 

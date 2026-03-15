@@ -381,10 +381,28 @@ def cmd_players(args):
     config = yahoo_api.load_config()
     league, _, _ = _get_league_and_team(args, config, need_team=False)
 
-    position = args.position or "B"  # Default to batters
+    position = args.position  # None means all players
     sort = getattr(args, "sort", None)
     sort_type = getattr(args, "sort_type", None)
     status = getattr(args, "status", None) or "FA"
+
+    # Determine stat season early — needed for both sort_season and stat fetch
+    stat_season = getattr(args, "stat_season", None)
+    if not stat_season:
+        season = getattr(args, "season", None) or config.get("season")
+        try:
+            settings = league.settings()
+            start_date = settings.get("start_date", "")
+            if start_date:
+                from datetime import date as _date
+                parts = start_date.split("-")
+                league_start = _date(int(parts[0]), int(parts[1]), int(parts[2]))
+                if _date.today() < league_start:
+                    stat_season = int(parts[0]) - 1
+        except Exception:
+            pass
+        if not stat_season and season:
+            stat_season = int(season)
 
     try:
         if args.search:
@@ -393,9 +411,10 @@ def cmd_players(args):
         elif sort or status != "FA":
             players = yahoo_api.fetch_players_sorted(
                 league, status=status, position=position,
-                sort=sort, sort_type=sort_type)
+                sort=sort, sort_type=sort_type, sort_season=stat_season)
         else:
-            players = league.free_agents(position)
+            # library free_agents() requires a position arg
+            players = league.free_agents(position or "B")
     except Exception as e:
         print(f"Error fetching players: {e}", file=sys.stderr)
         sys.exit(1)
@@ -413,7 +432,37 @@ def cmd_players(args):
         print("No players match the filter criteria.")
         return
 
-    print(formatters.format_players(players, fmt=args.format))
+    # Fetch stats only when --position is explicitly provided (skip for --search)
+    categories = []
+    if not args.search and args.position:
+        try:
+            # Fetch stat categories
+            stat_cats = league.stat_categories()
+            all_categories = formatters._extract_categories_from_settings(stat_cats)
+
+            # Filter by position type: pitching positions get P stats, else B
+            pitching_positions = {"SP", "RP", "P"}
+            pos_type = "P" if position.upper() in pitching_positions else "B"
+            categories = [c for c in all_categories if c.get("position_type") == pos_type]
+
+            # Fetch player stats
+            player_ids = [p.get("player_id") for p in players if p.get("player_id")]
+            if player_ids:
+                kwargs = {"season": stat_season} if stat_season else {}
+                stats = league.player_stats(player_ids, "season", **kwargs)
+                stats_by_id = {}
+                for s in stats:
+                    pid = s.get("player_id")
+                    if pid:
+                        stats_by_id[pid] = s
+                for p in players:
+                    pid = p.get("player_id")
+                    if pid in stats_by_id:
+                        p.update(stats_by_id[pid])
+        except Exception:
+            categories = []
+
+    print(formatters.format_players(players, categories=categories, fmt=args.format))
 
 
 def cmd_draft(args):
@@ -1105,10 +1154,11 @@ def main():
     players_parser.add_argument("--search", help="Filter by player name")
     players_parser.add_argument("--position", help="Filter by position (e.g., SP, OF, SS)")
     players_parser.add_argument("--status", help="Player status: FA (free agents, default), A (available=FA+W), T (taken), W (waivers), ALL (every player)")
-    players_parser.add_argument("--sort", help="Sort order: OR (overall rank), AR (actual rank), PTS (points), NAME")
+    players_parser.add_argument("--sort", help="Sort order: OR (overall rank), AR (actual rank), PTS (points), NAME, or stat abbrev (HR, ERA, SB, etc.)")
     players_parser.add_argument("--sort-type", help="Sort period: season, lastweek, lastmonth")
     players_parser.add_argument("--count", type=int, help="Max players to show (default: 25)")
     players_parser.add_argument("--start", type=int, help="Start offset for pagination")
+    players_parser.add_argument("--stat-season", type=int, help="Season year for stats (auto-detects if omitted)")
 
     # draft
     draft_parser = subparsers.add_parser("draft", help="Draft results")

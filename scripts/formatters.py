@@ -549,9 +549,10 @@ def _ownership_label(player):
     return ""
 
 
-def format_players(players, fmt="text"):
+def format_players(players, categories=None, fmt="text"):
     # Check if any player has ownership data
     has_ownership = any(_safe(p, "ownership_type", "") for p in players)
+    has_stats = bool(categories)
 
     if fmt == "json":
         items = []
@@ -567,16 +568,30 @@ def format_players(players, fmt="text"):
             if has_ownership:
                 item["ownership"] = _safe(p, "ownership_type", "")
                 item["owner"] = _safe(p, "owner_team_name", "")
+            if has_stats:
+                stats = _extract_player_stats(p)
+                item["stats"] = stats
             items.append(item)
         return json.dumps({"players": items}, indent=2)
 
     lines = ["Available Players"]
+
+    # Build header
+    base_cols = f"{'Name':<25} {'Pos':<12} {'Team':<6} {'Status':<6}"
     if has_ownership:
-        lines.append(f"{'Name':<25} {'Pos':<12} {'Team':<6} {'Status':<6} {'% Own':<7} {'Owner'}")
-        lines.append("-" * 78)
+        base_cols += f" {'%Own':<5} {'Owner':<12}"
     else:
-        lines.append(f"{'Name':<25} {'Pos':<12} {'Team':<6} {'Status':<6} {'% Owned':<8}")
-        lines.append("-" * 60)
+        base_cols += f" {'%Own':<5}"
+
+    if has_stats:
+        cat_abbrs = [c.get("abbr", c.get("name", "?"))[:6] for c in categories]
+        stat_header = "  ".join(f"{a:>6}" for a in cat_abbrs)
+        lines.append(f"{base_cols}  {stat_header}")
+    else:
+        lines.append(base_cols)
+    lines.append("-" * len(lines[-1]))
+
+    cat_ids = [c.get("stat_id") for c in categories] if has_stats else []
     for p in players:
         name = _player_name(p)[:24]
         pos = _player_position(p)[:11]
@@ -584,11 +599,20 @@ def format_players(players, fmt="text"):
         status = _player_status(p)[:5]
         pct_owned = _safe(p, "percent_owned", "")
         pct = f"{pct_owned}%" if pct_owned != "" else ""
+
+        row = f"{name:<25} {pos:<12} {team:<6} {status:<6}"
         if has_ownership:
-            owner = _ownership_label(p)
-            lines.append(f"{name:<25} {pos:<12} {team:<6} {status:<6} {pct:<7} {owner}")
+            owner = _ownership_label(p)[:12]
+            row += f" {pct:<5} {owner:<12}"
         else:
-            lines.append(f"{name:<25} {pos:<12} {team:<6} {status:<6} {pct:<8}")
+            row += f" {pct:<5}"
+
+        if has_stats:
+            stats = _extract_player_stats(p)
+            stat_vals = "  ".join(f"{str(stats.get(sid, '-')):>6}" for sid in cat_ids)
+            row += f"  {stat_vals}"
+
+        lines.append(row)
 
     if fmt == "discord":
         return "```\n" + "\n".join(lines) + "\n```"

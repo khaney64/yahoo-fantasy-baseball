@@ -275,6 +275,36 @@ def _parse_players_page(raw):
     return (count, result)
 
 
+# Common MLB stat abbreviations → Yahoo stat IDs for sorting
+STAT_SORT_MAP = {
+    # Batting
+    "R": "7", "H": "8", "1B": "9", "2B": "10", "3B": "11",
+    "HR": "12", "RBI": "13", "SB": "16", "BB": "18", "K": "21",
+    "AVG": "3", "OBP": "4", "SLG": "5", "OPS": "55", "AB": "6",
+    "TB": "23", "XBH": "61", "PA": "65",
+    # Pitching
+    "W": "28", "L": "29", "SV": "32", "HLD": "48", "SV+H": "89",
+    "ERA": "26", "WHIP": "27", "IP": "50", "QS": "83",
+    "K9": "57", "BB9": "78", "BSV": "84",
+}
+
+
+def _resolve_sort(sort):
+    """Resolve a sort value — accept OR/AR/PTS/NAME directly, or map stat abbrevs to IDs."""
+    if sort is None:
+        return None
+    upper = sort.upper()
+    if upper in ("OR", "AR", "PTS", "NAME"):
+        return upper
+    # Try stat abbreviation
+    if upper in STAT_SORT_MAP:
+        return STAT_SORT_MAP[upper]
+    # Already a numeric stat ID
+    if sort.isdigit():
+        return sort
+    return sort
+
+
 def fetch_players_sorted(league, status="FA", position=None, sort=None,
                          sort_type=None, sort_season=None):
     """Fetch players with sort and ownership, bypassing the library's free_agents().
@@ -288,7 +318,7 @@ def fetch_players_sorted(league, status="FA", position=None, sort=None,
                 "ALL" (every player: taken + available).
         position: Position filter — "B", "P", "C", "1B", "SS", "OF", "SP", etc.
         sort: Sort field — "OR" (overall rank), "AR" (actual rank), "PTS" (points),
-              "NAME", or a stat_id integer.
+              "NAME", or a stat abbreviation (HR, ERA, SB, etc.).
         sort_type: Sort period — "season", "lastweek", "lastmonth", "date".
         sort_season: Sort season year (e.g., 2025).
 
@@ -296,6 +326,13 @@ def fetch_players_sorted(league, status="FA", position=None, sort=None,
         list[dict]: Player dicts with name, player_id, position_type,
                     percent_owned, ownership_type, owner_team_name, etc.
     """
+    sort = _resolve_sort(sort)
+
+    # Yahoo requires sort_type when sorting by a stat ID (numeric).
+    # Default to "season" so --sort IP (etc.) works without --sort-type.
+    if sort and sort not in ("OR", "AR", "PTS", "NAME") and not sort_type:
+        sort_type = "season"
+
     # "ALL" is synthetic — Yahoo has no single status for all players.
     # Fetch taken + available separately and merge by sort order.
     if status.upper() == "ALL":
@@ -303,41 +340,21 @@ def fetch_players_sorted(league, status="FA", position=None, sort=None,
             league, "T", position, sort, sort_type, sort_season)
         available = _fetch_players_page_loop(
             league, "A", position, sort, sort_type, sort_season)
-        # Merge: interleave by maintaining sort order.
-        # Both lists are already sorted by the API. Merge them.
+        # Deduplicate — a player can appear in both lists
         seen = set()
-        merged = []
-        i, j = 0, 0
-        while i < len(taken) and j < len(available):
-            # Take from whichever list has the next player in order.
-            # Since both are sorted the same way, alternate picking.
-            # But we can't compare rank — just interleave taken first
-            # since top-ranked players tend to be rostered.
-            tp = taken[i]
-            tid = tp.get('player_id')
-            if tid not in seen:
-                seen.add(tid)
-                merged.append(tp)
-            i += 1
-            if j < len(available):
-                ap = available[j]
-                aid = ap.get('player_id')
-                if aid not in seen:
-                    seen.add(aid)
-                    merged.append(ap)
-                j += 1
-        # Drain remaining
-        for p in taken[i:]:
+        combined = []
+        for p in taken + available:
             pid = p.get('player_id')
-            if pid not in seen:
+            if pid and pid not in seen:
                 seen.add(pid)
-                merged.append(p)
-        for p in available[j:]:
-            pid = p.get('player_id')
-            if pid not in seen:
-                seen.add(pid)
-                merged.append(p)
-        return merged
+                combined.append(p)
+        # Both lists are sorted by Yahoo. After dedup, taken players
+        # appear first followed by available. Since we can't compare
+        # rank across lists without stat values in the response, keep
+        # the combined order as-is — Yahoo's sort_type=season with the
+        # stat sort will at least give correct order within each group.
+        # The caller's --count slicing still applies.
+        return combined
 
     return _fetch_players_page_loop(
         league, status, position, sort, sort_type, sort_season)
