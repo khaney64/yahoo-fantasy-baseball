@@ -382,7 +382,7 @@ def cmd_players(args):
     league, _, _ = _get_league_and_team(args, config, need_team=False)
 
     position = args.position  # None means all players
-    sort = getattr(args, "sort", None)
+    sort = getattr(args, "sort", None) or "OR"
     sort_type = getattr(args, "sort_type", None)
     status = getattr(args, "status", None) or "FA"
 
@@ -1154,7 +1154,7 @@ def main():
     players_parser.add_argument("--search", help="Filter by player name")
     players_parser.add_argument("--position", help="Filter by position (e.g., SP, OF, SS)")
     players_parser.add_argument("--status", help="Player status: FA (free agents, default), A (available=FA+W), T (taken), W (waivers), ALL (every player)")
-    players_parser.add_argument("--sort", help="Sort order: OR (overall rank), AR (actual rank), PTS (points), NAME, or stat abbrev (HR, ERA, SB, etc.)")
+    players_parser.add_argument("--sort", help="Sort order: OR (overall/preseason rank, default), AR (actual/current rank), PTS (points), NAME, or stat abbrev (HR, ERA, SB, etc.)")
     players_parser.add_argument("--sort-type", help="Sort period: season, lastweek, lastmonth")
     players_parser.add_argument("--count", type=int, help="Max players to show (default: 25)")
     players_parser.add_argument("--start", type=int, help="Start offset for pagination")

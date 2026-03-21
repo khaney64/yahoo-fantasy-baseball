@@ -166,7 +166,7 @@ python yahoo-fantasy-baseball.py claim --player "Jake Burger" [--drop "Luis Arra
 | `--date YYYY-MM-DD` | Specific date (roster command) |
 | `--format text\|json\|discord` | Output format (default: text) |
 | `--status FA\|A\|T\|W\|ALL` | Player status filter: FA (free agents), A (available=FA+W), T (taken), W (waivers), ALL (every player) |
-| `--sort OR\|AR\|PTS\|NAME\|{stat}` | Sort order for players. See stat sort reference below |
+| `--sort OR\|AR\|PTS\|NAME\|{stat}` | Sort order: OR = overall/preseason rank (default), AR = actual/current rank, PTS = points, NAME = alphabetical, or stat abbreviation. See stat sort reference below |
 | `--sort-type season\|lastweek\|lastmonth` | Sort period (used with --sort) |
 | `--stat-season YEAR` | Season year for stat columns (auto-detects: falls back to previous year if league hasn't started) |
 | `--confirm` | Execute write operations (without this, preview only) |
