@@ -755,8 +755,9 @@ def format_injuries(players, team_name="", fmt="text"):
 # Today (daily roster status with MLB schedule)
 # ---------------------------------------------------------------------------
 
-def format_today(groups, probable_starters, team_name="", fmt="text"):
-    """Format the today command output.
+def format_today(groups, probable_starters, team_name="", fmt="text",
+                  date_str=None):
+    """Format the today/day command output.
 
     Args:
         groups: dict with keys 'active', 'not_playing', 'injured', 'bench',
@@ -764,7 +765,22 @@ def format_today(groups, probable_starters, team_name="", fmt="text"):
         probable_starters: set of player names who are probable starters.
         team_name: Team display name.
         fmt: Output format.
+        date_str: Date string (YYYY-MM-DD). If today or None, header says "Today".
     """
+    from datetime import date as _date
+
+    # Determine header label
+    today_str = _date.today().strftime("%Y-%m-%d")
+    if not date_str or date_str == today_str:
+        date_label = "Today"
+    else:
+        d = _date.fromisoformat(date_str)
+        try:
+            date_label = d.strftime("%a %b %-d")
+        except ValueError:
+            # Windows doesn't support %-d
+            date_label = f"{d.strftime('%a %b')} {d.day}"
+
     if fmt == "json":
         def _player_entry(p, is_probable=False):
             entry = {
@@ -779,7 +795,7 @@ def format_today(groups, probable_starters, team_name="", fmt="text"):
                 entry["probable_starter"] = True
             return entry
 
-        result = {"team": team_name, "groups": {}}
+        result = {"team": team_name, "date": date_str or today_str, "groups": {}}
         for group_name in ("active", "not_playing", "injured", "bench"):
             result["groups"][group_name] = [
                 _player_entry(p, _player_name(p) in probable_starters)
@@ -789,7 +805,7 @@ def format_today(groups, probable_starters, team_name="", fmt="text"):
 
     lines = []
     if team_name:
-        lines.append(f"Today — {team_name}")
+        lines.append(f"{date_label} — {team_name}")
     lines.append("")
 
     section_labels = [
@@ -805,7 +821,7 @@ def format_today(groups, probable_starters, team_name="", fmt="text"):
         if players:
             for p in players:
                 name = _player_name(p)
-                pos = _player_selected_position(p) or _player_position(p)
+                pos = _player_position(p) or _player_selected_position(p)
                 team = _player_team(p)
                 status = _player_status(p)
                 extra = ""
@@ -813,7 +829,7 @@ def format_today(groups, probable_starters, team_name="", fmt="text"):
                     extra = " [PROBABLE STARTER]"
                 if status:
                     extra += f" ({status})"
-                lines.append(f"    {name:<22} {pos:<5} {team:<5}{extra}")
+                lines.append(f"    {name:<22} {pos:<14} {team:<5}{extra}")
         else:
             lines.append("    (none)")
         lines.append("")

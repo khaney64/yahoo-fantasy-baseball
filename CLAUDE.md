@@ -42,7 +42,7 @@ yahoo-fantasy-baseball/
 
 **`scripts/fantasy.py`** — CLI layer:
 - Argparse with subcommands organized into read and write operations
-- Read: `auth`, `config`, `leagues`, `teams`, `roster`, `lineup`, `standings`, `matchup`, `scoreboard`, `players`, `draft`, `transactions`, `injuries`, `today`, `optimize`
+- Read: `auth`, `config`, `leagues`, `teams`, `roster`, `lineup`, `standings`, `matchup`, `scoreboard`, `players`, `draft`, `transactions`, `injuries`, `today`, `day`, `optimize`
 - Write: `swap`, `move-to-il`, `add`, `drop`, `add-drop`, `claim`
 - Write commands require `--confirm` flag to execute; without it they show a preview
 - Each `cmd_*` function: resolves args → calls yahoo_api → calls formatters → prints
@@ -84,7 +84,8 @@ cd scripts && python fantasy.py roster
 | `draft` | `league.draft_results()` |
 | `transactions` | `league.transactions(types, count)` |
 | `injuries` | `team.roster(day=today)` filtered |
-| `today` | roster + `mlb_client.teams_playing_today()` + `mlb_client.probable_pitchers_today()` |
+| `today` | roster + `mlb_client.teams_playing_today()` + `mlb_client.probable_pitchers_today()` (shortcut for `day` with today's date) |
+| `day` | roster + `mlb_client.teams_playing_today(date)` + `mlb_client.probable_pitchers_today(date)` |
 | `optimize` | roster + MLB schedule + position analysis |
 | `swap` | `team.change_positions(date, lineup)` |
 | `move-to-il` | `team.change_positions(date, [{player_id, "IL"}])` |

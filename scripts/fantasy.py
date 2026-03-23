@@ -46,6 +46,20 @@ import formatters
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _parse_date(date_str):
+    """Parse a date string in various formats, return a date object.
+
+    Tries US formats first (MM/DD/YYYY), then ISO (YYYY-MM-DD).
+    """
+    for fmt in ("%m/%d/%Y", "%m-%d-%Y", "%m/%d/%y", "%m-%d-%y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(date_str, fmt).date()
+        except ValueError:
+            continue
+    print(f"Invalid date: {date_str} (use MM/DD/YYYY or YYYY-MM-DD)", file=sys.stderr)
+    sys.exit(1)
+
+
 def _get_league_and_team(args, config, need_team=True):
     """Common setup: resolve league, optionally resolve team.
 
@@ -237,7 +251,7 @@ def cmd_roster(args):
 
     try:
         if args.date:
-            roster_date = datetime.strptime(args.date, "%Y-%m-%d").date()
+            roster_date = _parse_date(args.date)
             players = tm.roster(day=roster_date)
         else:
             players = tm.roster()
@@ -563,17 +577,29 @@ def cmd_injuries(args):
 # ---------------------------------------------------------------------------
 
 def cmd_today(args):
-    """Show daily roster status with MLB schedule awareness."""
+    """Show daily roster status — shortcut for 'day' with today's date."""
+    args.date = None
+    cmd_day(args)
+
+
+def cmd_day(args):
+    """Show roster status for a given date with MLB schedule awareness."""
     import mlb_client
 
     config = yahoo_api.load_config()
     league, team_key, team_name = _get_league_and_team(args, config)
     tm = yahoo_api.get_team(league, team_key)
 
-    today_str = date.today().strftime("%Y-%m-%d")
+    # Resolve date
+    target_date_str = getattr(args, "date", None)
+    if target_date_str:
+        target_date = _parse_date(target_date_str)
+    else:
+        target_date = date.today()
+    target_date_str = target_date.strftime("%Y-%m-%d")
 
     try:
-        roster = tm.roster(day=date.today())
+        roster = tm.roster(day=target_date)
     except Exception as e:
         print(f"Error fetching roster: {e}", file=sys.stderr)
         sys.exit(1)
@@ -583,8 +609,8 @@ def cmd_today(args):
         return
 
     # Fetch MLB schedule data
-    teams_playing = mlb_client.teams_playing_today(today_str)
-    probable_pitchers = mlb_client.probable_pitchers_today(today_str)
+    teams_playing = mlb_client.teams_playing_today(target_date_str)
+    probable_pitchers = mlb_client.probable_pitchers_today(target_date_str)
 
     # Build probable starters set (player names)
     probable_starter_names = set(probable_pitchers.values())
@@ -612,7 +638,8 @@ def cmd_today(args):
             groups["not_playing"].append(player)
 
     print(formatters.format_today(groups, probable_starter_names,
-                                   team_name=team_name, fmt=args.format))
+                                   team_name=team_name, fmt=args.format,
+                                   date_str=target_date_str))
 
 
 # ---------------------------------------------------------------------------
@@ -1127,7 +1154,7 @@ def main():
     # roster
     roster_parser = subparsers.add_parser("roster", help="Current roster with stats")
     _add_common_args(roster_parser)
-    roster_parser.add_argument("--date", help="Date for roster (YYYY-MM-DD)")
+    roster_parser.add_argument("--date", help="Date for roster (e.g. 3/22/2026 or 2026-03-22)")
 
     # lineup
     lineup_parser = subparsers.add_parser("lineup", help="Roster with scoring categories for start/sit analysis")
@@ -1173,9 +1200,14 @@ def main():
     injuries_parser = subparsers.add_parser("injuries", help="Injured players on roster")
     _add_common_args(injuries_parser)
 
-    # today (Phase 2)
-    today_parser = subparsers.add_parser("today", help="Daily roster status with MLB schedule")
+    # today (Phase 2) — shortcut for 'day' with today's date
+    today_parser = subparsers.add_parser("today", help="Daily roster status with MLB schedule (today)")
     _add_common_args(today_parser)
+
+    # day — roster status for a specific date
+    day_parser = subparsers.add_parser("day", help="Roster status for a given date with MLB schedule")
+    _add_common_args(day_parser)
+    day_parser.add_argument("--date", help="Date (e.g. 3/22/2026 or 2026-03-22, default: today)")
 
     # optimize (Phase 3)
     optimize_parser = subparsers.add_parser("optimize", help="Roster optimization suggestions")
@@ -1239,6 +1271,7 @@ def main():
         "transactions": cmd_transactions,
         "injuries": cmd_injuries,
         "today": cmd_today,
+        "day": cmd_day,
         "optimize": cmd_optimize,
         "swap": cmd_swap,
         "move-to-il": cmd_move_to_il,

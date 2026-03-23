@@ -66,6 +66,9 @@ python3 /home/claw/.openclaw/workspace/skills/yahoo-fantasy-baseball/yahoo-fanta
 # Daily roster status (who's playing, who's off)
 python3 /home/claw/.openclaw/workspace/skills/yahoo-fantasy-baseball/yahoo-fantasy-baseball.py today
 
+# Roster status for a specific date
+python3 /home/claw/.openclaw/workspace/skills/yahoo-fantasy-baseball/yahoo-fantasy-baseball.py day --date 2026-03-25
+
 # Get optimization suggestions
 python3 /home/claw/.openclaw/workspace/skills/yahoo-fantasy-baseball/yahoo-fantasy-baseball.py optimize
 
@@ -112,11 +115,14 @@ python3 /home/claw/.openclaw/workspace/skills/yahoo-fantasy-baseball/yahoo-fanta
 ### Daily Management
 
 ```bash
-# Today: roster status with MLB schedule awareness
+# Today: roster status with MLB schedule awareness (shortcut for 'day' with today's date)
 python3 /home/claw/.openclaw/workspace/skills/yahoo-fantasy-baseball/yahoo-fantasy-baseball.py today
+
+# Day: roster status for a specific date
+python3 /home/claw/.openclaw/workspace/skills/yahoo-fantasy-baseball/yahoo-fantasy-baseball.py day --date 2026-03-25
 ```
 
-Groups your roster into ACTIVE (team playing), NOT PLAYING (team off), INJURED, and BENCH. Flags probable starting pitchers.
+Groups your roster into ACTIVE (team playing), NOT PLAYING (team off), INJURED, and BENCH. Shows each player's eligible positions and flags probable starting pitchers. The `today` command is a shortcut for `day` with today's date.
 
 ```bash
 # Optimize: smart roster analysis with suggestions
@@ -163,7 +169,7 @@ python3 /home/claw/.openclaw/workspace/skills/yahoo-fantasy-baseball/yahoo-fanta
 | `--team ID` | Team ID (overrides config/auto-detect) |
 | `--season YEAR` | Season year (for historical data) |
 | `--week N` | Scoring week number |
-| `--date YYYY-MM-DD` | Specific date (roster command) |
+| `--date` | Specific date — accepts MM/DD/YYYY, M/D/YYYY, MM-DD-YYYY, or YYYY-MM-DD (roster, day commands) |
 | `--format text\|json\|discord` | Output format (default: text) |
 | `--status FA\|A\|T\|W\|ALL` | Player status filter: FA (free agents), A (available=FA+W), T (taken), W (waivers), ALL (every player) |
 | `--sort OR\|AR\|PTS\|NAME\|{stat}` | Sort order: OR = overall/preseason rank (default), AR = actual/current rank, PTS = points, NAME = alphabetical, or stat abbreviation. See stat sort reference below |
@@ -237,23 +243,23 @@ Mookie Betts              SS,OF,Util   SS    LAD
 Zack Wheeler              SP           IL    PHI    IL-60
 ```
 
-**today:**
+**today / day:**
 
 ```
 Today — Team Name
 
   ACTIVE (team playing today) (8)
-    Aaron Judge            OF    NYY
-    Gerrit Cole            SP    NYY   [PROBABLE STARTER]
+    Aaron Judge            OF,Util        NYY
+    Gerrit Cole            SP             NYY   [PROBABLE STARTER]
 
   NOT PLAYING (team off today) (3)
-    Mookie Betts           SS    LAD
+    Mookie Betts           SS,OF,Util     LAD
 
   INJURED LIST (1)
-    Zack Wheeler           IL    PHI   (IL-60)
+    Zack Wheeler           SP             PHI   (IL-60)
 
   BENCH (3)
-    Jake Burger            BN    MIA
+    Jake Burger            3B,1B,Util     MIA
 ```
 
 **optimize:**
@@ -299,7 +305,7 @@ All commands support `--format discord` which wraps text output in code blocks.
 - **Rate limits**: Yahoo enforces API rate limits. Avoid rapid-fire requests.
 - **Season scope**: Data is scoped to the configured season. Use `--season` for historical data.
 - **OAuth tokens**: Tokens auto-refresh but may eventually expire, requiring re-authentication via `auth`.
-- **MLB schedule**: The `today` and `optimize` commands use the MLB Stats API for schedule data (off days, probable pitchers). This data is not available from the Yahoo Fantasy API.
+- **MLB schedule**: The `today`, `day`, and `optimize` commands use the MLB Stats API for schedule data (off days, probable pitchers). This data is not available from the Yahoo Fantasy API.
 
 ## Credential Storage
 
