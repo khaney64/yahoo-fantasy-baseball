@@ -214,3 +214,42 @@ def game_opponents_today(date_str=None):
                 opponents[home_abbr] = away_abbr
 
     return opponents
+
+
+def game_matchups_today(date_str=None):
+    """Return a mapping of team abbreviation -> matchup string (e.g. 'at SF', 'vs NYY').
+
+    Args:
+        date_str: Date in YYYY-MM-DD format. Defaults to today.
+
+    Returns:
+        dict mapping team abbreviation -> matchup string with home/away prefix.
+    """
+    if date_str is None:
+        date_str = datetime.now().strftime("%Y-%m-%d")
+
+    parts = date_str.split("-")
+    api_date = f"{parts[1]}/{parts[2]}/{parts[0]}"
+
+    url = f"{SCHEDULE_URL}?sportId=1&date={api_date}"
+    data = _fetch_json(url)
+    if data is None:
+        return {}
+
+    matchups = {}
+    for date_entry in data.get("dates", []):
+        for game in date_entry.get("games", []):
+            status = game.get("status", {}).get("detailedState", "")
+            if status in ("Cancelled", "Postponed"):
+                continue
+            away = game.get("teams", {}).get("away", {}).get("team", {})
+            home = game.get("teams", {}).get("home", {}).get("team", {})
+            away_id = away.get("id")
+            home_id = home.get("id")
+            if away_id in _TEAM_ID_TO_ABBR and home_id in _TEAM_ID_TO_ABBR:
+                away_abbr = _TEAM_ID_TO_ABBR[away_id]
+                home_abbr = _TEAM_ID_TO_ABBR[home_id]
+                matchups[away_abbr] = f"at {home_abbr}"
+                matchups[home_abbr] = f"vs {away_abbr}"
+
+    return matchups

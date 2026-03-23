@@ -252,9 +252,9 @@ def cmd_roster(args):
     try:
         if args.date:
             roster_date = _parse_date(args.date)
-            players = tm.roster(day=roster_date)
+            players = yahoo_api.get_roster(tm, day=roster_date)
         else:
-            players = tm.roster()
+            players = yahoo_api.get_roster(tm)
     except Exception as e:
         print(f"Error fetching roster: {e}", file=sys.stderr)
         sys.exit(1)
@@ -282,7 +282,7 @@ def cmd_lineup(args):
 
     # Get roster
     try:
-        players = tm.roster()
+        players = yahoo_api.get_roster(tm)
     except Exception as e:
         print(f"Error fetching lineup: {e}", file=sys.stderr)
         sys.exit(1)
@@ -564,7 +564,7 @@ def cmd_injuries(args):
     tm = yahoo_api.get_team(league, team_key)
 
     try:
-        players = tm.roster(day=date.today())
+        players = yahoo_api.get_roster(tm, day=date.today())
     except Exception as e:
         print(f"Error fetching roster: {e}", file=sys.stderr)
         sys.exit(1)
@@ -599,7 +599,7 @@ def cmd_day(args):
     target_date_str = target_date.strftime("%Y-%m-%d")
 
     try:
-        roster = tm.roster(day=target_date)
+        roster = yahoo_api.get_roster(tm, day=target_date)
     except Exception as e:
         print(f"Error fetching roster: {e}", file=sys.stderr)
         sys.exit(1)
@@ -611,6 +611,7 @@ def cmd_day(args):
     # Fetch MLB schedule data
     teams_playing = mlb_client.teams_playing_today(target_date_str)
     probable_pitchers = mlb_client.probable_pitchers_today(target_date_str)
+    matchups = mlb_client.game_matchups_today(target_date_str)
 
     # Build probable starters set (player names)
     probable_starter_names = set(probable_pitchers.values())
@@ -639,7 +640,8 @@ def cmd_day(args):
 
     print(formatters.format_today(groups, probable_starter_names,
                                    team_name=team_name, fmt=args.format,
-                                   date_str=target_date_str))
+                                   date_str=target_date_str,
+                                   matchups=matchups))
 
 
 # ---------------------------------------------------------------------------
@@ -685,7 +687,7 @@ def cmd_optimize(args):
     today_str = date.today().strftime("%Y-%m-%d")
 
     try:
-        roster = tm.roster(day=date.today())
+        roster = yahoo_api.get_roster(tm, day=date.today())
     except Exception as e:
         print(f"Error fetching roster: {e}", file=sys.stderr)
         sys.exit(1)
@@ -825,7 +827,7 @@ def cmd_swap(args):
     tm = yahoo_api.get_team(league, team_key)
     today = date.today()
 
-    roster = tm.roster(day=today)
+    roster = yahoo_api.get_roster(tm, day=today)
 
     if args.auto:
         # Run optimize logic and execute all swap suggestions
@@ -943,7 +945,7 @@ def cmd_move_to_il(args):
     tm = yahoo_api.get_team(league, team_key)
     today = date.today()
 
-    roster = tm.roster(day=today)
+    roster = yahoo_api.get_roster(tm, day=today)
     player = _resolve_player_on_roster(roster, args.player)
     name = formatters._player_name(player)
     pid = formatters._player_id(player)
@@ -1004,7 +1006,7 @@ def cmd_drop(args):
     league, team_key, team_name = _get_league_and_team(args, config)
     tm = yahoo_api.get_team(league, team_key)
 
-    roster = tm.roster()
+    roster = yahoo_api.get_roster(tm)
     player = _resolve_player_on_roster(roster, args.player)
     name = formatters._player_name(player)
     pid = formatters._player_id(player)
@@ -1037,7 +1039,7 @@ def cmd_add_drop(args):
     add_name = formatters._player_name(add_player)
     add_pid = formatters._player_id(add_player)
 
-    roster = tm.roster()
+    roster = yahoo_api.get_roster(tm)
     drop_player = _resolve_player_on_roster(roster, args.drop)
     drop_name = formatters._player_name(drop_player)
     drop_pid = formatters._player_id(drop_player)
@@ -1081,7 +1083,7 @@ def cmd_claim(args):
 
     drop_pid = None
     if args.drop:
-        roster = tm.roster()
+        roster = yahoo_api.get_roster(tm)
         drop_player = _resolve_player_on_roster(roster, args.drop)
         drop_name = formatters._player_name(drop_player)
         drop_pid = formatters._player_id(drop_player)

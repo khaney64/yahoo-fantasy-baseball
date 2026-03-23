@@ -404,6 +404,93 @@ def get_team(league, team_key):
     return league.to_team(team_key)
 
 
+def get_roster(team, day=None, week=None):
+    """Fetch roster with editorial_team_abbr included.
+
+    The yahoo-fantasy-api library's tm.roster() doesn't extract
+    editorial_team_abbr from the raw response. This wrapper does.
+
+    Args:
+        team: yfa.Team instance.
+        day: Optional date object.
+        week: Optional week number.
+
+    Returns:
+        List of player dicts with player_id, name, position_type,
+        eligible_positions, selected_position, status, editorial_team_abbr.
+    """
+    import objectpath
+
+    raw = team.yhandler.get_roster_raw(team.team_key, week=week, day=day)
+    t = objectpath.Tree(raw)
+
+    roster_obj = t.execute('$.fantasy_content.team[1].roster')
+    if not roster_obj:
+        return []
+
+    players_dict = None
+    for key, value in roster_obj.items():
+        if isinstance(value, dict) and 'players' in value:
+            players_dict = value['players']
+            break
+
+    if not players_dict:
+        return []
+
+    roster = []
+    player_keys = [k for k in players_dict.keys() if k != 'count']
+    player_keys.sort(key=lambda x: int(x) if x.isdigit() else float('inf'))
+    for key in player_keys:
+        player_entry = players_dict[key]
+        if not isinstance(player_entry, dict) or 'player' not in player_entry:
+            continue
+
+        player = player_entry['player']
+        if not isinstance(player, list) or len(player) < 2:
+            continue
+
+        player_data = player[0]
+        selected_position_data = player[1]
+
+        plyr = {}
+        for item in player_data:
+            if not isinstance(item, dict):
+                continue
+            if 'player_id' in item:
+                plyr['player_id'] = int(item['player_id'])
+            elif 'name' in item and 'full' in item['name']:
+                plyr['name'] = item['name']['full']
+            elif 'editorial_team_abbr' in item:
+                plyr['editorial_team_abbr'] = item['editorial_team_abbr']
+            elif 'position_type' in item:
+                if 'player_id' not in plyr:
+                    continue
+                if 'position_type' not in plyr:
+                    plyr['position_type'] = item['position_type']
+            elif 'eligible_positions' in item:
+                plyr['eligible_positions'] = [
+                    p['position'] for p in item['eligible_positions']
+                ]
+
+        # Get status (skip boolean keeper status).
+        plyr['status'] = ""
+        for item in player_data:
+            if isinstance(item, dict) and 'status' in item:
+                status_value = item['status']
+                if not isinstance(status_value, bool):
+                    plyr['status'] = status_value
+                    break
+
+        # Extract selected_position.
+        if 'selected_position' in selected_position_data:
+            plyr['selected_position'] = selected_position_data['selected_position'][1]['position']
+
+        if 'player_id' in plyr and 'name' in plyr:
+            roster.append(plyr)
+
+    return roster
+
+
 def resolve_league_id(args_league, config):
     """Resolve league ID from args or config, exit with error if missing."""
     league_id = args_league or config.get("league_id")

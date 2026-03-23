@@ -249,17 +249,17 @@ Zack Wheeler              SP           IL    PHI    IL-60
 Today — Team Name
 
   ACTIVE (team playing today) (8)
-    Aaron Judge            OF,Util        NYY
-    Gerrit Cole            SP             NYY   [PROBABLE STARTER]
+    Aaron Judge            OF,Util        NYY  vs BOS
+    Gerrit Cole            SP             NYY  vs BOS  [PROBABLE STARTER]
 
   NOT PLAYING (team off today) (3)
     Mookie Betts           SS,OF,Util     LAD
 
-  INJURED LIST (1)
-    Zack Wheeler           SP             PHI   (IL-60)
-
   BENCH (3)
-    Jake Burger            3B,1B,Util     MIA
+    Jake Burger            3B,1B,Util     MIA  at ATL
+
+  INJURED LIST (1)
+    Zack Wheeler           SP             PHI          (IL-60)
 ```
 
 **optimize:**
