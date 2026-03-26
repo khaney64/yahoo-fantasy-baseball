@@ -612,6 +612,7 @@ def cmd_day(args):
     teams_playing = mlb_client.teams_playing_today(target_date_str)
     probable_pitchers = mlb_client.probable_pitchers_today(target_date_str)
     matchups = mlb_client.game_matchups_today(target_date_str)
+    game_times, first_pitch = mlb_client.game_times_today(target_date_str)
 
     # Build probable starters set (player names)
     probable_starter_names = set(probable_pitchers.values())
@@ -641,7 +642,9 @@ def cmd_day(args):
     print(formatters.format_today(groups, probable_starter_names,
                                    team_name=team_name, fmt=args.format,
                                    date_str=target_date_str,
-                                   matchups=matchups))
+                                   matchups=matchups,
+                                   game_times=game_times,
+                                   first_pitch=first_pitch))
 
 
 # ---------------------------------------------------------------------------

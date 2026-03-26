@@ -6,7 +6,7 @@ Modeled on skills/baseball/scripts/mlb_api.py.
 
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
@@ -253,3 +253,70 @@ def game_matchups_today(date_str=None):
                 matchups[home_abbr] = f"vs {away_abbr}"
 
     return matchups
+
+
+def _parse_game_time(iso_string):
+    """Parse ISO 8601 UTC datetime to local datetime."""
+    if not iso_string:
+        return None
+    try:
+        dt = datetime.fromisoformat(iso_string.replace("Z", "+00:00"))
+        return dt.astimezone()  # converts to system local timezone
+    except (ValueError, TypeError):
+        return None
+
+
+def _format_time(dt):
+    """Format datetime as short local time like '7:10 PM'."""
+    if dt is None:
+        return "TBD"
+    return dt.strftime("%I:%M %p").lstrip("0")
+
+
+def game_times_today(date_str=None):
+    """Return game start times (local) for today's games.
+
+    Args:
+        date_str: Date in YYYY-MM-DD format. Defaults to today.
+
+    Returns:
+        Tuple of (times_dict, first_pitch_str):
+        - times_dict: dict mapping team abbreviation -> formatted local time string.
+        - first_pitch_str: formatted time of the earliest game, or None.
+    """
+    if date_str is None:
+        date_str = datetime.now().strftime("%Y-%m-%d")
+
+    parts = date_str.split("-")
+    api_date = f"{parts[1]}/{parts[2]}/{parts[0]}"
+
+    url = f"{SCHEDULE_URL}?sportId=1&date={api_date}"
+    data = _fetch_json(url)
+    if data is None:
+        return {}, None
+
+    times = {}
+    earliest_dt = None
+
+    for date_entry in data.get("dates", []):
+        for game in date_entry.get("games", []):
+            status = game.get("status", {}).get("detailedState", "")
+            if status in ("Cancelled", "Postponed"):
+                continue
+            away = game.get("teams", {}).get("away", {}).get("team", {})
+            home = game.get("teams", {}).get("home", {}).get("team", {})
+            away_id = away.get("id")
+            home_id = home.get("id")
+            game_dt = _parse_game_time(game.get("gameDate"))
+            time_str = _format_time(game_dt)
+
+            if away_id in _TEAM_ID_TO_ABBR:
+                times[_TEAM_ID_TO_ABBR[away_id]] = time_str
+            if home_id in _TEAM_ID_TO_ABBR:
+                times[_TEAM_ID_TO_ABBR[home_id]] = time_str
+
+            if game_dt and (earliest_dt is None or game_dt < earliest_dt):
+                earliest_dt = game_dt
+
+    first_pitch = _format_time(earliest_dt) if earliest_dt else None
+    return times, first_pitch

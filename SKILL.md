@@ -122,7 +122,7 @@ python3 /home/claw/.openclaw/workspace/skills/yahoo-fantasy-baseball/yahoo-fanta
 python3 /home/claw/.openclaw/workspace/skills/yahoo-fantasy-baseball/yahoo-fantasy-baseball.py day --date 2026-03-25
 ```
 
-Groups your roster into ACTIVE (team playing), NOT PLAYING (team off), INJURED, and BENCH. Shows each player's eligible positions and flags probable starting pitchers. The `today` command is a shortcut for `day` with today's date.
+Groups your roster into ACTIVE (team playing), NOT PLAYING (team off), INJURED, and BENCH. Shows each player's eligible positions, game start times (local timezone), and flags probable starting pitchers. Displays "First pitch" time at the top so you know when to finalize your lineup. The `today` command is a shortcut for `day` with today's date.
 
 ```bash
 # Optimize: smart roster analysis with suggestions
@@ -247,19 +247,20 @@ Zack Wheeler              SP           IL    PHI    IL-60
 
 ```
 Today — Team Name
+  First pitch: 1:10 PM
 
   ACTIVE (team playing today) (8)
-    Aaron Judge            OF,Util        NYY  vs BOS
-    Gerrit Cole            SP             NYY  vs BOS  [PROBABLE STARTER]
+    Aaron Judge            OF,Util        NYY  vs BOS 7:05 PM
+    Gerrit Cole            SP             NYY  vs BOS 7:05 PM  [PROBABLE STARTER]
 
   NOT PLAYING (team off today) (3)
     Mookie Betts           SS,OF,Util     LAD
 
   BENCH (3)
-    Jake Burger            3B,1B,Util     MIA  at ATL
+    Jake Burger            3B,1B,Util     MIA  at ATL 1:10 PM
 
   INJURED LIST (1)
-    Zack Wheeler           SP             PHI          (IL-60)
+    Zack Wheeler           SP             PHI                   (IL-60)
 ```
 
 **optimize:**
@@ -297,6 +298,8 @@ All commands support `--format discord` which wraps text output in code blocks.
 - **selected_position** — Current lineup slot
 - **team** — Real MLB team abbreviation
 - **status** — Injury designation (IL, IL-60, DTD, etc.)
+- **game_time** — Game start time in local timezone (today/day commands)
+- **first_pitch** — Earliest game start time across all games (today/day commands, JSON top-level)
 - **percent_owned** — Ownership percentage (free agents)
 - **player_position** — Display position (draft results)
 

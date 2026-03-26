@@ -751,7 +751,8 @@ def format_injuries(players, team_name="", fmt="text"):
 # ---------------------------------------------------------------------------
 
 def format_today(groups, probable_starters, team_name="", fmt="text",
-                  date_str=None, matchups=None):
+                  date_str=None, matchups=None, game_times=None,
+                  first_pitch=None):
     """Format the today/day command output.
 
     Args:
@@ -762,9 +763,13 @@ def format_today(groups, probable_starters, team_name="", fmt="text",
         fmt: Output format.
         date_str: Date string (YYYY-MM-DD). If today or None, header says "Today".
         matchups: dict mapping MLB team abbr -> matchup string (e.g. "at SF", "vs NYY").
+        game_times: dict mapping MLB team abbr -> formatted local time string.
+        first_pitch: formatted time of the earliest game, or None.
     """
     if matchups is None:
         matchups = {}
+    if game_times is None:
+        game_times = {}
     from datetime import date as _date
 
     # Determine header label
@@ -791,13 +796,15 @@ def format_today(groups, probable_starters, team_name="", fmt="text",
                 "selected_position": _player_selected_position(p),
                 "team": team_abbr,
                 "opponent": matchups.get(mlb_abbr, ""),
+                "game_time": game_times.get(mlb_abbr, ""),
                 "status": _player_status(p),
             }
             if is_probable:
                 entry["probable_starter"] = True
             return entry
 
-        result = {"team": team_name, "date": date_str or today_str, "groups": {}}
+        result = {"team": team_name, "date": date_str or today_str,
+                  "first_pitch": first_pitch or "", "groups": {}}
         for group_name in ("active", "not_playing", "bench", "injured"):
             result["groups"][group_name] = [
                 _player_entry(p, _player_name(p) in probable_starters)
@@ -808,6 +815,8 @@ def format_today(groups, probable_starters, team_name="", fmt="text",
     lines = []
     if team_name:
         lines.append(f"{date_label} — {team_name}")
+    if first_pitch:
+        lines.append(f"  First pitch: {first_pitch}")
     lines.append("")
 
     section_labels = [
@@ -828,13 +837,15 @@ def format_today(groups, probable_starters, team_name="", fmt="text",
                 team = _player_team(p)
                 mlb_abbr = mlb_client.normalize_team_abbr(team)
                 opp = matchups.get(mlb_abbr, "")
+                game_time = game_times.get(mlb_abbr, "")
+                opp_time = f"{opp} {game_time}".strip() if opp else ""
                 status = _player_status(p)
                 extra = ""
                 if name in probable_starters:
                     extra = " [PROBABLE STARTER]"
                 if status:
                     extra += f" ({status})"
-                lines.append(f"    {name:<22} {pos:<14} {team:<5}{opp:<8}{extra}")
+                lines.append(f"    {name:<22} {pos:<14} {team:<5}{opp_time:<18}{extra}")
         else:
             lines.append("    (none)")
         lines.append("")
