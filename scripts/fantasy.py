@@ -554,7 +554,32 @@ def cmd_transactions(args):
         print("No recent transactions found.")
         return
 
+    if args.since:
+        cutoff = _parse_since(args.since)
+        if cutoff:
+            transactions = [t for t in transactions
+                           if int(t.get("timestamp", 0)) >= int(cutoff.timestamp())]
+
+    if not transactions:
+        print("No transactions found in that time window.")
+        return
+
     print(formatters.format_transactions(transactions, fmt=args.format))
+
+
+def _parse_since(since_str):
+    """Parse a relative time string like '3d', '1w', '24h' into a datetime cutoff."""
+    import re
+    from datetime import datetime, timedelta
+    m = re.match(r'^(\d+)\s*([hdwm])$', since_str.strip().lower())
+    if not m:
+        print(f"Invalid --since format: {since_str!r} (use e.g., 3d, 1w, 24h, 2w)", file=sys.stderr)
+        return None
+    val = int(m.group(1))
+    unit = m.group(2)
+    delta = {"h": timedelta(hours=val), "d": timedelta(days=val),
+             "w": timedelta(weeks=val), "m": timedelta(days=val * 30)}[unit]
+    return datetime.now() - delta
 
 
 def cmd_injuries(args):
@@ -1200,6 +1225,7 @@ def main():
     txn_parser = subparsers.add_parser("transactions", help="Recent league transactions")
     _add_common_args(txn_parser, with_team=False)
     txn_parser.add_argument("--type", help="Filter by type (e.g., add,drop,trade)")
+    txn_parser.add_argument("--since", help="Show transactions within time window (e.g., 3d, 1w, 24h, 2w)")
 
     # injuries
     injuries_parser = subparsers.add_parser("injuries", help="Injured players on roster")

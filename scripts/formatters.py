@@ -28,8 +28,14 @@ def _team_name(team):
 
 
 def _team_id(team):
-    """Extract team ID."""
-    return _safe(team, "team_id", "?")
+    """Extract team ID from team_id or team_key."""
+    tid = _safe(team, "team_id", "")
+    if tid:
+        return tid
+    tk = _safe(team, "team_key", "")
+    if tk and ".t." in tk:
+        return tk.split(".t.")[-1]
+    return "?"
 
 
 def _team_key(team):
@@ -358,6 +364,7 @@ def format_scoreboard(scoreboard_data, week=None, fmt="text"):
 
     for m in matchups:
         teams = m.get("teams", [])
+        status = m.get("status", "")
         if len(teams) >= 2:
             t1 = teams[0]
             t2 = teams[1]
@@ -365,7 +372,12 @@ def format_scoreboard(scoreboard_data, week=None, fmt="text"):
             n2 = t2.get("name", "?")
             p1 = t1.get("points", "0")
             p2 = t2.get("points", "0")
-            lines.append(f"  {n1:<28} {p1:>6}  vs  {n2:<28} {p2:>6}")
+            status_label = "In progress" if status == "midevent" else (
+                "Final" if status == "postevent" else "")
+            lines.append(f"  {n1:<30} {p1:>3}  vs  {p2:<3} {n2}")
+            if status_label:
+                lines.append(f"  {'':>34}{status_label}")
+            lines.append("")
 
     if not matchups:
         lines.append("  No matchup data available.")
@@ -402,10 +414,17 @@ def _extract_matchups_from_raw(raw):
     if not scoreboard:
         return matchups
 
-    # Get matchups
-    raw_matchups = scoreboard
+    # Get matchups — Yahoo wraps them as scoreboard -> "0" -> matchups -> ...
+    raw_matchups = None
     if isinstance(scoreboard, dict):
-        raw_matchups = scoreboard.get("matchups", scoreboard)
+        raw_matchups = scoreboard.get("matchups")
+        if raw_matchups is None:
+            # Try numeric wrapper: scoreboard -> "0" -> matchups
+            wrapper = scoreboard.get("0")
+            if isinstance(wrapper, dict):
+                raw_matchups = wrapper.get("matchups", wrapper)
+        if raw_matchups is None:
+            raw_matchups = scoreboard
 
     if isinstance(raw_matchups, dict):
         count = int(raw_matchups.get("count", 0))
@@ -434,7 +453,15 @@ def _parse_single_matchup(matchup):
     result["week"] = matchup.get("week", "")
     result["status"] = matchup.get("status", "")
 
-    raw_teams = matchup.get("teams", matchup)
+    # Teams may be at matchup["teams"] or matchup["0"]["teams"]
+    raw_teams = matchup.get("teams")
+    if raw_teams is None:
+        wrapper = matchup.get("0")
+        if isinstance(wrapper, dict):
+            raw_teams = wrapper.get("teams", wrapper)
+    if raw_teams is None:
+        raw_teams = matchup
+
     if isinstance(raw_teams, dict):
         for key in ("0", "1"):
             team_wrapper = raw_teams.get(key, {})
@@ -455,8 +482,15 @@ def _parse_scoreboard_team(team_data):
     info = {"name": "?", "team_id": "?", "points": "0"}
 
     if isinstance(team_data, list):
-        # Yahoo sometimes nests team info in a list
+        # Yahoo nests team as [list-of-metadata-dicts, stats-dict]
+        # Flatten: expand any inner lists so we iterate all dicts
+        flat = []
         for item in team_data:
+            if isinstance(item, list):
+                flat.extend(item)
+            else:
+                flat.append(item)
+        for item in flat:
             if isinstance(item, dict):
                 if "name" in item:
                     info["name"] = item["name"]
@@ -654,57 +688,126 @@ def format_draft(picks, fmt="text"):
 # ---------------------------------------------------------------------------
 
 def format_transactions(transactions, fmt="text"):
+    parsed = _parse_all_transactions(transactions)
+
     if fmt == "json":
-        items = []
-        for txn in transactions:
-            items.append({
-                "type": _safe(txn, "type"),
-                "status": _safe(txn, "status"),
-                "timestamp": _safe(txn, "timestamp"),
-                "players": _safe(txn, "players", []),
-            })
-        return json.dumps({"transactions": items}, indent=2)
+        return json.dumps({"transactions": parsed}, indent=2)
 
     lines = ["Recent Transactions"]
-    lines.append(f"{'Type':<12} {'Status':<10} {'Details'}")
     lines.append("-" * 60)
-    for txn in transactions:
-        txn_type = str(_safe(txn, "type"))[:11]
-        status = str(_safe(txn, "status"))[:9]
-        details = _format_txn_details_text(txn)
-        lines.append(f"{txn_type:<12} {status:<10} {details}")
+    for txn in parsed:
+        ts = txn.get("date", "")
+        txn_type = txn.get("type", "")
+        team = txn.get("team", "")
+        header_parts = [p for p in [txn_type, team, ts] if p]
+        lines.append(" | ".join(header_parts))
+        for p in txn.get("players", []):
+            action = p.get("action", "")
+            name = p.get("name", "Unknown")
+            detail = p.get("detail", "")
+            prefix = f"  {action + ':':<20}" if action else "  "
+            suffix = f" ({detail})" if detail else ""
+            lines.append(f"{prefix}{name}{suffix}")
+        lines.append("")
 
     if fmt == "discord":
         return "```\n" + "\n".join(lines) + "\n```"
     return "\n".join(lines)
 
 
-def _format_txn_details_text(txn):
-    """Format transaction details for text output."""
-    players = _safe(txn, "players")
-    if not players:
-        return ""
-    parts = []
-    if isinstance(players, list):
-        for p in players:
-            player = p.get("player", p) if isinstance(p, dict) else p
-            name = _player_name(player) if isinstance(player, dict) else str(player)
-            txn_data = _safe(player, "transaction_data") if isinstance(player, dict) else None
-            action = ""
-            if isinstance(txn_data, dict):
-                action = txn_data.get("type", "")
-            if action:
-                parts.append(f"{action}: {name}")
+def _parse_all_transactions(transactions):
+    """Parse raw Yahoo transaction list into clean dicts."""
+    import datetime
+    results = []
+    for txn in transactions:
+        entry = {
+            "type": _safe(txn, "type"),
+            "status": _safe(txn, "status"),
+            "timestamp": _safe(txn, "timestamp"),
+            "team": "",
+            "date": "",
+            "players": [],
+        }
+        # Convert timestamp to readable date
+        ts = _safe(txn, "timestamp")
+        if ts:
+            try:
+                dt = datetime.datetime.fromtimestamp(int(ts))
+                entry["date"] = dt.strftime("%b %d, %I:%M %p").lstrip("0")
+            except (ValueError, OSError):
+                pass
+
+        raw_players = _safe(txn, "players", {})
+        if isinstance(raw_players, dict):
+            for key in sorted(raw_players.keys()):
+                if key == "count":
+                    continue
+                wrapper = raw_players[key]
+                if not isinstance(wrapper, dict):
+                    continue
+                player_data = wrapper.get("player", wrapper)
+                info = _parse_txn_player(player_data)
+                entry["players"].append(info)
+                # Use first team name found as the transaction team
+                if not entry["team"] and info.get("team_name"):
+                    entry["team"] = info["team_name"]
+
+        results.append(entry)
+    return results
+
+
+def _parse_txn_player(player_data):
+    """Parse a single player from transaction data."""
+    info = {"name": "Unknown", "action": "", "detail": "", "team_name": ""}
+
+    # player_data is [list-of-metadata-dicts, {transaction_data: [...]}]
+    flat = []
+    if isinstance(player_data, list):
+        for item in player_data:
+            if isinstance(item, list):
+                flat.extend(item)
             else:
-                parts.append(name)
-    elif isinstance(players, dict):
-        for key, val in players.items():
-            if isinstance(val, dict):
-                name = _player_name(val)
-                parts.append(name)
-            else:
-                parts.append(str(val))
-    return "; ".join(parts) if parts else ""
+                flat.append(item)
+    elif isinstance(player_data, dict):
+        flat = [player_data]
+
+    merged = {}
+    txn_data = {}
+    for item in flat:
+        if not isinstance(item, dict):
+            continue
+        if "transaction_data" in item:
+            td = item["transaction_data"]
+            if isinstance(td, list) and td:
+                txn_data = td[0] if isinstance(td[0], dict) else {}
+            elif isinstance(td, dict):
+                txn_data = td
+        else:
+            merged.update(item)
+
+    info["name"] = _player_name(merged)
+    team_abbr = merged.get("editorial_team_abbr", "")
+    pos = merged.get("display_position", "")
+    if team_abbr or pos:
+        info["detail"] = f"{team_abbr} - {pos}" if team_abbr and pos else (team_abbr or pos)
+
+    action_type = txn_data.get("type", "")
+    source = txn_data.get("source_type", "")
+    dest_team = txn_data.get("destination_team_name", "")
+    source_team = txn_data.get("source_team_name", "")
+
+    if action_type == "add":
+        source_label = "Free Agent" if source == "freeagents" else ("Waivers" if source == "waivers" else source)
+        info["action"] = f"Add from {source_label}"
+        info["team_name"] = dest_team
+    elif action_type == "drop":
+        info["action"] = "Drop"
+        info["team_name"] = source_team
+    else:
+        info["action"] = action_type
+        info["team_name"] = dest_team or source_team
+
+    return info
 
 
 # ---------------------------------------------------------------------------

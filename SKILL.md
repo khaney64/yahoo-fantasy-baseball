@@ -108,7 +108,7 @@ python3 /home/claw/.openclaw/workspace/skills/yahoo-fantasy-baseball/yahoo-fanta
 # Players & Draft
 python3 /home/claw/.openclaw/workspace/skills/yahoo-fantasy-baseball/yahoo-fantasy-baseball.py players [--search NAME] [--position POS] [--status FA|A|T|W|ALL] [--sort OR|AR|PTS|NAME|HR|ERA|...] [--sort-type season|lastweek|lastmonth] [--stat-season YEAR] [--count N]
 python3 /home/claw/.openclaw/workspace/skills/yahoo-fantasy-baseball/yahoo-fantasy-baseball.py draft [--team ID]
-python3 /home/claw/.openclaw/workspace/skills/yahoo-fantasy-baseball/yahoo-fantasy-baseball.py transactions [--type add,drop,trade]
+python3 /home/claw/.openclaw/workspace/skills/yahoo-fantasy-baseball/yahoo-fantasy-baseball.py transactions [--type add,drop,trade] [--since 3d]
 python3 /home/claw/.openclaw/workspace/skills/yahoo-fantasy-baseball/yahoo-fantasy-baseball.py injuries
 ```
 
@@ -175,6 +175,7 @@ python3 /home/claw/.openclaw/workspace/skills/yahoo-fantasy-baseball/yahoo-fanta
 | `--sort OR\|AR\|PTS\|NAME\|{stat}` | Sort order: OR = overall/preseason rank (default), AR = actual/current rank, PTS = points, NAME = alphabetical, or stat abbreviation. See stat sort reference below |
 | `--sort-type season\|lastweek\|lastmonth` | Sort period (used with --sort) |
 | `--stat-season YEAR` | Season year for stat columns (auto-detects: falls back to previous year if league hasn't started) |
+| `--since 3d\|1w\|24h\|2w` | Filter transactions by time window (h=hours, d=days, w=weeks, m=months) |
 | `--confirm` | Execute write operations (without this, preview only) |
 
 ### Sort Reference
@@ -280,6 +281,31 @@ Roster Optimization Suggestions
     Move Zack Wheeler (IL-60) from SP slot to IL to free a roster spot.
 
 Total: 3 suggestion(s)
+```
+
+**scoreboard:**
+
+```
+League Scoreboard — Week 1
+------------------------------------------------------------
+  Clanker Killerz                  6  vs  4   1% AI 99% hot gas
+                                    In progress
+
+  Mossi Possi                      1  vs  7   Normal Men
+                                    In progress
+```
+
+**transactions:**
+
+```
+Recent Transactions
+------------------------------------------------------------
+add | 1% AI 99% hot gas | Mar 25, 07:38 PM
+  Add from Free Agent:Luis Castillo (SEA - SP)
+
+add/drop | 1% AI 99% hot gas | Mar 25, 04:14 AM
+  Add from Waivers:   Josh Smith (TEX - 1B,3B,SS,OF)
+  Drop:               Luis Robert Jr. (NYM - OF)
 ```
 
 ### JSON
