@@ -1017,6 +1017,117 @@ def format_optimize(suggestions, fmt="text"):
 
 
 # ---------------------------------------------------------------------------
+# Standouts (yesterday's top performers)
+# ---------------------------------------------------------------------------
+
+def format_standouts(top_performers, left_on_bench, date_str, categories=None,
+                     fmt="text"):
+    """Format the standouts command output.
+
+    Args:
+        top_performers: list of player dicts (active lineup), sorted by points desc.
+        left_on_bench: list of player dicts (benched), sorted by points desc.
+        date_str: Date string (YYYY-MM-DD).
+        categories: list of category dicts from _extract_categories_from_settings.
+        fmt: Output format.
+    """
+    if fmt == "json":
+        def _entry(p):
+            stats = _extract_player_stats(p)
+            points = stats.pop("total_points", 0)
+            try:
+                points = float(points)
+            except (ValueError, TypeError):
+                points = 0.0
+            # Only include non-zero counting stats
+            key_stats = {}
+            for k, v in stats.items():
+                try:
+                    fv = float(v)
+                except (ValueError, TypeError):
+                    continue
+                if fv != 0:
+                    key_stats[k] = fv if fv != int(fv) else int(fv)
+            return {
+                "name": _player_name(p),
+                "team": _safe(p, "_fantasy_team", ""),
+                "mlb_team": _player_team(p),
+                "position": _player_selected_position(p) or _player_position(p),
+                "points": points,
+                "achievements": _safe(p, "_achievements", []),
+                "key_stats": key_stats,
+            }
+
+        result = {
+            "date": date_str,
+            "top_performers": [_entry(p) for p in top_performers],
+            "left_on_bench": [_entry(p) for p in left_on_bench],
+        }
+        return json.dumps(result, indent=2)
+
+    # Text / discord format
+    from datetime import date as _date
+    try:
+        d = _date.fromisoformat(date_str)
+        try:
+            date_label = d.strftime("%a %b %-d")
+        except ValueError:
+            date_label = f"{d.strftime('%a %b')} {d.day}"
+    except Exception:
+        date_label = date_str
+
+    lines = [f"Standout Performers — {date_label}"]
+    lines.append("=" * 50)
+
+    def _format_player_line(p, idx):
+        name = _player_name(p)
+        pos = _player_selected_position(p) or _player_position(p)
+        mlb = _player_team(p)
+        team = _safe(p, "_fantasy_team", "")
+        stats = _extract_player_stats(p)
+        points = stats.pop("total_points", 0)
+        achievements = _safe(p, "_achievements", [])
+
+        # Build stat line with non-zero stats
+        stat_parts = []
+        for k, v in stats.items():
+            try:
+                fv = float(v)
+            except (ValueError, TypeError):
+                continue
+            if fv != 0:
+                display = f"{int(fv)}" if fv == int(fv) else f"{fv:.2f}"
+                stat_parts.append(f"{display} {k}")
+        stat_line = ", ".join(stat_parts) if stat_parts else ""
+
+        ach_str = f"  [{', '.join(achievements)}]" if achievements else ""
+        lines.append(f"  {idx}. {name} ({pos}, {mlb}) — {team}")
+        lines.append(f"     {points} pts  |  {stat_line}{ach_str}")
+
+    if top_performers:
+        lines.append("")
+        lines.append(f"  TOP PERFORMERS ({len(top_performers)})")
+        for i, p in enumerate(top_performers, 1):
+            _format_player_line(p, i)
+    else:
+        lines.append("")
+        lines.append("  TOP PERFORMERS")
+        lines.append("    No standout performances.")
+
+    if left_on_bench:
+        lines.append("")
+        lines.append(f"  LEFT ON THE BENCH ({len(left_on_bench)})")
+        for i, p in enumerate(left_on_bench, 1):
+            _format_player_line(p, i)
+
+    lines.append("")
+
+    if fmt == "discord":
+        return "```\n" + "\n".join(lines) + "\n```"
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Write operation previews
 # ---------------------------------------------------------------------------
 

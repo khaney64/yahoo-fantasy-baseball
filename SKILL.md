@@ -125,6 +125,17 @@ python3 /home/claw/.openclaw/workspace/skills/yahoo-fantasy-baseball/yahoo-fanta
 Groups your roster into ACTIVE (team playing), NOT PLAYING (team off), INJURED, and BENCH. Shows each player's eligible positions, game start times (local timezone), and flags probable starting pitchers. Displays "First pitch" time at the top so you know when to finalize your lineup. The `today` command is a shortcut for `day` with today's date.
 
 ```bash
+# Standouts: yesterday's top performers across all league teams
+python3 /home/claw/.openclaw/workspace/skills/yahoo-fantasy-baseball/yahoo-fantasy-baseball.py standouts [--date YYYY-MM-DD] [--min-points N] [--count N]
+```
+
+Fetches daily player stats for all rostered players across every team in the league and identifies standout performances. Output is split into two sections:
+1. **Top Performers** — players in active lineup slots who scored the most fantasy points
+2. **Left on the Bench** — benched players with notable performances (points that didn't count)
+
+Each player shows their fantasy points, key stat line, and achievement badges (e.g., "Multi-HR", "10+ K", "Gem", "CGSO"). Defaults to yesterday; use `--date` for a specific date.
+
+```bash
 # Optimize: smart roster analysis with suggestions
 python3 /home/claw/.openclaw/workspace/skills/yahoo-fantasy-baseball/yahoo-fantasy-baseball.py optimize
 ```

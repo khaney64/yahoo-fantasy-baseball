@@ -18,6 +18,7 @@ Usage:
     python scripts/fantasy.py transactions [--type add,drop,trade] [--format text|json|discord]
     python scripts/fantasy.py injuries [--format text|json|discord]
     python scripts/fantasy.py today [--format text|json|discord]
+    python scripts/fantasy.py standouts [--date DATE] [--min-points N] [--count N] [--format text|json|discord]
     python scripts/fantasy.py optimize [--format text|json|discord]
     python scripts/fantasy.py swap --player "Name" --to POS [--confirm]
     python scripts/fantasy.py swap --auto [--confirm]
@@ -673,6 +674,176 @@ def cmd_day(args):
 
 
 # ---------------------------------------------------------------------------
+# Standouts — yesterday's top performers across all teams
+# ---------------------------------------------------------------------------
+
+BATTING_ACHIEVEMENTS = [
+    # (label, check_fn)
+    ("3+ HR",        lambda s: s.get("HR", 0) >= 3),
+    ("Multi-HR",     lambda s: 2 <= s.get("HR", 0) < 3),
+    ("Grand Slam Day", lambda s: s.get("HR", 0) >= 1 and s.get("RBI", 0) >= 4),
+    ("5+ RBI",       lambda s: s.get("RBI", 0) >= 5),
+    ("Multi-SB",     lambda s: s.get("SB", 0) >= 2),
+    ("4+ Hit Game",  lambda s: s.get("H", 0) >= 4),
+    ("3+ Runs",      lambda s: s.get("R", 0) >= 3),
+]
+
+PITCHING_ACHIEVEMENTS = [
+    ("CGSO",    lambda s: s.get("IP", 0) >= 9 and s.get("ER", 0) == 0),
+    ("CG",      lambda s: s.get("IP", 0) >= 9 and not (s.get("IP", 0) >= 9 and s.get("ER", 0) == 0)),
+    ("Shutout", lambda s: 7 <= s.get("IP", 0) < 9 and s.get("ER", 0) == 0),
+    ("Gem",     lambda s: s.get("IP", 0) >= 7 and 0 < s.get("ER", 0) <= 1),
+    ("10+ K",   lambda s: s.get("K", 0) >= 10),
+    ("QS + Win", lambda s: s.get("QS", 0) >= 1 and s.get("W", 0) >= 1),
+]
+
+
+def _get_achievements(position_type, stats):
+    """Return achievement labels for a player's daily stats."""
+    achievements = []
+    rules = BATTING_ACHIEVEMENTS if position_type == "B" else PITCHING_ACHIEVEMENTS
+    # Convert stat values to floats for comparison
+    numeric = {}
+    for k, v in stats.items():
+        try:
+            numeric[k] = float(v)
+        except (ValueError, TypeError):
+            pass
+    for label, check in rules:
+        if check(numeric):
+            achievements.append(label)
+    return achievements
+
+
+def _identify_standouts(all_players, min_points=None):
+    """Split players into top_performers and left_on_bench lists.
+
+    Each player dict must have _extract_player_stats-compatible stats merged in,
+    plus '_fantasy_team' and 'selected_position' keys.
+
+    Returns (top_performers, left_on_bench) sorted by points descending.
+    """
+    BENCH_SLOTS = {"BN", "IL", "IL+", "DL", "DL+", "NA"}
+
+    active = []
+    benched = []
+
+    for p in all_players:
+        stats = formatters._extract_player_stats(p)
+        total = stats.get("total_points", 0)
+        try:
+            total = float(total)
+        except (ValueError, TypeError):
+            total = 0.0
+        if total <= 0:
+            continue
+        if min_points is not None and total < min_points:
+            continue
+
+        # Compute achievements
+        pos_type = p.get("position_type", "B")
+        achievements = _get_achievements(pos_type, stats)
+        p["_achievements"] = achievements
+
+        slot = formatters._player_selected_position(p).upper()
+        if slot in BENCH_SLOTS:
+            benched.append((total, p))
+        else:
+            active.append((total, p))
+
+    active.sort(key=lambda x: x[0], reverse=True)
+    benched.sort(key=lambda x: x[0], reverse=True)
+
+    return [p for _, p in active], [p for _, p in benched]
+
+
+def cmd_standouts(args):
+    """Show yesterday's standout performers across all league teams."""
+    from datetime import timedelta
+
+    config = yahoo_api.load_config()
+    league, _, _ = _get_league_and_team(args, config, need_team=False)
+
+    # Resolve target date (default: yesterday)
+    target_date_str = getattr(args, "date", None)
+    if target_date_str:
+        target_date = _parse_date(target_date_str)
+    else:
+        target_date = date.today() - timedelta(days=1)
+    target_date_str = target_date.strftime("%Y-%m-%d")
+
+    # Get all teams
+    teams = league.teams()
+
+    # Get stat categories
+    categories = []
+    try:
+        stat_cats = league.stat_categories()
+        categories = formatters._extract_categories_from_settings(stat_cats)
+    except Exception:
+        pass
+
+    # Collect all rostered players across every team
+    all_players = []
+    for team_key, team_info in teams.items():
+        team_name = team_info.get("name", team_key)
+        try:
+            tm = yahoo_api.get_team(league, team_key)
+            roster = yahoo_api.get_roster(tm, day=target_date)
+        except Exception as e:
+            print(f"Warning: Could not fetch roster for {team_name}: {e}",
+                  file=sys.stderr)
+            continue
+        for p in roster:
+            p["_fantasy_team"] = team_name
+            all_players.append(p)
+
+    if not all_players:
+        print(formatters.format_standouts([], [], target_date_str,
+                                           categories=categories, fmt=args.format))
+        return
+
+    # Fetch daily stats in batches of 25
+    player_ids = [p.get("player_id") for p in all_players if p.get("player_id")]
+    stats_by_id = {}
+    batch_size = 25
+    for i in range(0, len(player_ids), batch_size):
+        batch = player_ids[i:i + batch_size]
+        try:
+            stats = league.player_stats(batch, "date", date=target_date)
+            for s in stats:
+                pid = s.get("player_id")
+                if pid:
+                    stats_by_id[pid] = s
+        except Exception as e:
+            print(f"Warning: Could not fetch stats for batch: {e}",
+                  file=sys.stderr)
+
+    # Merge stats into player dicts
+    for p in all_players:
+        pid = p.get("player_id")
+        if pid in stats_by_id:
+            p.update(stats_by_id[pid])
+
+    # Identify standouts
+    min_points = getattr(args, "min_points", None)
+    if min_points is None:
+        min_points = 5.0
+    top_performers, left_on_bench = _identify_standouts(all_players, min_points)
+
+    # Apply count limit
+    count = getattr(args, "count", None)
+    top_count = count or 10
+    bench_count = count or 5
+    top_performers = top_performers[:top_count]
+    left_on_bench = left_on_bench[:bench_count]
+
+    print(formatters.format_standouts(top_performers, left_on_bench,
+                                       target_date_str, categories=categories,
+                                       fmt=args.format))
+
+
+# ---------------------------------------------------------------------------
 # Phase 3: optimize command
 # ---------------------------------------------------------------------------
 
@@ -1240,6 +1411,17 @@ def main():
     _add_common_args(day_parser)
     day_parser.add_argument("--date", help="Date (e.g. 3/22/2026 or 2026-03-22, default: today)")
 
+    # standouts — yesterday's top performers
+    standouts_parser = subparsers.add_parser("standouts",
+        help="Yesterday's standout performers across all teams")
+    _add_common_args(standouts_parser, with_team=False)
+    standouts_parser.add_argument("--date",
+        help="Date to check (default: yesterday)")
+    standouts_parser.add_argument("--min-points", type=float, dest="min_points",
+        help="Minimum fantasy points threshold (default: 5.0)")
+    standouts_parser.add_argument("--count", type=int,
+        help="Max standouts to show per section (default: 10 active, 5 bench)")
+
     # optimize (Phase 3)
     optimize_parser = subparsers.add_parser("optimize", help="Roster optimization suggestions")
     _add_common_args(optimize_parser)
@@ -1303,6 +1485,7 @@ def main():
         "injuries": cmd_injuries,
         "today": cmd_today,
         "day": cmd_day,
+        "standouts": cmd_standouts,
         "optimize": cmd_optimize,
         "swap": cmd_swap,
         "move-to-il": cmd_move_to_il,
