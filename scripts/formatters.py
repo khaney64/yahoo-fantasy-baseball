@@ -1034,14 +1034,21 @@ def format_standouts(top_performers, left_on_bench, date_str, categories=None,
     if fmt == "json":
         def _entry(p):
             stats = _extract_player_stats(p)
-            points = stats.pop("total_points", 0)
-            try:
-                points = float(points)
-            except (ValueError, TypeError):
-                points = 0.0
-            # Only include non-zero counting stats
+            # Remove internal keys from stats
+            stats.pop("total_points", None)
+            stats.pop("_fantasy_team", None)
+            stats.pop("_achievements", None)
+            stats.pop("_standout_score", None)
+            # Build key_stats — keep non-zero values, preserve strings like H/AB
             key_stats = {}
             for k, v in stats.items():
+                if k.startswith("_"):
+                    continue
+                if isinstance(v, str) and "/" in v:
+                    # Composite stat like H/AB — keep as string if non-zero
+                    if not v.startswith("0/"):
+                        key_stats[k] = v
+                    continue
                 try:
                     fv = float(v)
                 except (ValueError, TypeError):
@@ -1053,7 +1060,7 @@ def format_standouts(top_performers, left_on_bench, date_str, categories=None,
                 "team": _safe(p, "_fantasy_team", ""),
                 "mlb_team": _player_team(p),
                 "position": _player_selected_position(p) or _player_position(p),
-                "points": points,
+                "score": _safe(p, "_standout_score", 0),
                 "achievements": _safe(p, "_achievements", []),
                 "key_stats": key_stats,
             }
@@ -1084,25 +1091,32 @@ def format_standouts(top_performers, left_on_bench, date_str, categories=None,
         pos = _player_selected_position(p) or _player_position(p)
         mlb = _player_team(p)
         team = _safe(p, "_fantasy_team", "")
+        score = _safe(p, "_standout_score", 0)
         stats = _extract_player_stats(p)
-        points = stats.pop("total_points", 0)
         achievements = _safe(p, "_achievements", [])
 
         # Build stat line with non-zero stats
         stat_parts = []
         for k, v in stats.items():
+            if k.startswith("_") or k in ("total_points",):
+                continue
+            if isinstance(v, str) and "/" in v:
+                # Composite stat like H/AB
+                if not v.startswith("0/"):
+                    stat_parts.append(f"{v} {k}")
+                continue
             try:
                 fv = float(v)
             except (ValueError, TypeError):
                 continue
             if fv != 0:
-                display = f"{int(fv)}" if fv == int(fv) else f"{fv:.2f}"
+                display = f"{int(fv)}" if fv == int(fv) else f"{fv:.3f}"
                 stat_parts.append(f"{display} {k}")
         stat_line = ", ".join(stat_parts) if stat_parts else ""
 
         ach_str = f"  [{', '.join(achievements)}]" if achievements else ""
         lines.append(f"  {idx}. {name} ({pos}, {mlb}) — {team}")
-        lines.append(f"     {points} pts  |  {stat_line}{ach_str}")
+        lines.append(f"     {stat_line}{ach_str}")
 
     if top_performers:
         lines.append("")

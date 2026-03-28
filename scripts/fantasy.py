@@ -715,13 +715,63 @@ def _get_achievements(position_type, stats):
     return achievements
 
 
-def _identify_standouts(all_players, min_points=None):
+def _compute_standout_score(stats, position_type):
+    """Compute a composite standout score from raw category stats.
+
+    For batters: weighted sum of R, HR, RBI, SB, H (from H/AB), plus OBP bonus.
+    For pitchers: weighted sum of W, K, QS, SV, HLD, minus ER, plus IP bonus.
+
+    Returns a float score; higher = more standout-worthy.
+    """
+    def _fval(key):
+        v = stats.get(key, 0)
+        try:
+            return float(v)
+        except (ValueError, TypeError):
+            return 0.0
+
+    if position_type == "P":
+        # Pitching score
+        ip = _fval("IP")
+        w = _fval("W")
+        k = _fval("K")
+        er = _fval("ER")
+        qs = _fval("QS")
+        sv = _fval("SV")
+        hld = _fval("HLD")
+        score = (w * 5) + (k * 1) + (qs * 3) + (sv * 5) + (hld * 3) + (ip * 0.5) - (er * 2)
+        return score
+    else:
+        # Batting score
+        r = _fval("R")
+        hr = _fval("HR")
+        rbi = _fval("RBI")
+        sb = _fval("SB")
+        obp = _fval("OBP")
+        # Extract hits from H/AB if present
+        h = 0.0
+        hab = stats.get("H/AB", "")
+        if isinstance(hab, str) and "/" in hab:
+            try:
+                h = float(hab.split("/")[0])
+            except (ValueError, TypeError):
+                pass
+        else:
+            h = _fval("H")
+        score = (hr * 4) + (rbi * 2) + (r * 2) + (sb * 3) + (h * 1) + (obp * 3)
+        return score
+
+
+def _identify_standouts(all_players, min_score=None):
     """Split players into top_performers and left_on_bench lists.
 
-    Each player dict must have _extract_player_stats-compatible stats merged in,
+    Each player dict must have stats merged in from league.player_stats(),
     plus '_fantasy_team' and 'selected_position' keys.
 
-    Returns (top_performers, left_on_bench) sorted by points descending.
+    Players are scored using a composite of their raw stat categories.
+    min_score filters out low-impact performances (default 5.0).
+
+    Returns (top_performers, left_on_bench) sorted by score descending.
     """
     BENCH_SLOTS = {"BN", "IL", "IL+", "DL", "DL+", "NA"}
 
@@ -730,26 +780,36 @@ def _identify_standouts(all_players, min_points=None):
 
     for p in all_players:
         stats = formatters._extract_player_stats(p)
-        total = stats.get("total_points", 0)
-        try:
-            total = float(total)
-        except (ValueError, TypeError):
-            total = 0.0
-        if total <= 0:
+        pos_type = p.get("position_type", "B")
+        score = _compute_standout_score(stats, pos_type)
+
+        if score <= 0:
             continue
-        if min_points is not None and total < min_points:
+        if min_score is not None and score < min_score:
             continue
 
+        # Store score for display and sorting
+        p["_standout_score"] = round(score, 1)
+
         # Compute achievements
-        pos_type = p.get("position_type", "B")
-        achievements = _get_achievements(pos_type, stats)
+        # Achievements need numeric stats — parse H/AB for achievement checks too
+        ach_stats = dict(stats)
+        hab = stats.get("H/AB", "")
+        if isinstance(hab, str) and "/" in hab:
+            parts = hab.split("/")
+            try:
+                ach_stats["H"] = float(parts[0])
+                ach_stats["AB"] = float(parts[1])
+            except (ValueError, TypeError):
+                pass
+        achievements = _get_achievements(pos_type, ach_stats)
         p["_achievements"] = achievements
 
         slot = formatters._player_selected_position(p).upper()
         if slot in BENCH_SLOTS:
-            benched.append((total, p))
+            benched.append((score, p))
         else:
-            active.append((total, p))
+            active.append((score, p))
 
     active.sort(key=lambda x: x[0], reverse=True)
     benched.sort(key=lambda x: x[0], reverse=True)
