@@ -1451,10 +1451,31 @@ def _group_moves_into_swaps(moves):
                     "reshuffle": [],
                 })
             else:
-                pass  # skip orphan active→active reshuffles
+                # Pure active→active reshuffle (e.g. UTIL ↔ 3B) — no bench
+                # involved, so walk the displacement chain until it closes
+                # into a cycle.
+                cycle = [m]
+                start_slot = m["from_slot"]
+                slots_involved = [m["from_slot"]]
+                target_slot = m["to_slot"]
+                while target_slot != start_slot and target_slot in slot_vacated_by:
+                    nxt = slot_vacated_by[target_slot]
+                    if id(nxt) in used:
+                        break
+                    used.add(id(nxt))
+                    cycle.append(nxt)
+                    slots_involved.append(target_slot)
+                    target_slot = nxt["to_slot"]
+                slots_involved.append(target_slot)
+                groups.append({
+                    "label": " / ".join(slots_involved),
+                    "start": [],
+                    "bench": [],
+                    "reshuffle": cycle,
+                })
 
-    # Filter out any groups that don't involve the bench
-    groups = [g for g in groups if g["start"] or g["bench"]]
+    # Filter out any groups that don't involve the bench or a reshuffle
+    groups = [g for g in groups if g["start"] or g["bench"] or g["reshuffle"]]
 
     # Tag each move with its swap_group_index for JSON consumers
     for idx, group in enumerate(groups):
