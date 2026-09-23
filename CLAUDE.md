@@ -45,6 +45,12 @@ yahoo-fantasy-baseball/
 - All commands are read-only
 - Each `cmd_*` function: resolves args → calls yahoo_api → calls formatters → prints
 
+Two distinct scoring paths — do not conflate them:
+- `_compute_standout_score()` — a **single-day** composite with fixed weights, used by `standouts` to rank one day's box scores. Correct for that job.
+- `_score_pool()` — the **optimizer's** scorer. Derives weights from the league's own categories, works in rates rather than totals (`average_season` blended with `lastmonth` at `_RECENCY_WEIGHT`), normalizes batters and pitchers in separate pools, and emits a 0–100 `_opt_score`. Falls back to `_compute_standout_score` only when the league's categories can't be read.
+
+Applying the daily formula to season totals is what made the optimizer volume-biased (it effectively ranked players by at-bats accumulated) and left rate categories like OBP contributing under 0.2% of a score. Keep the two paths separate.
+
 **`scripts/formatters.py`** — Output layer:
 - One `format_*` function per data type
 - Each supports text (tabular), JSON (`json.dumps`), and discord (wrapped in code blocks)
@@ -87,7 +93,7 @@ cd scripts && python fantasy.py roster
 | `today` | roster + `mlb_client.teams_playing_today()` + `mlb_client.probable_pitchers_today()` (shortcut for `day` with today's date) |
 | `day` | roster + `mlb_client.teams_playing_today(date)` + `mlb_client.probable_pitchers_today(date)` |
 | `standouts` | `league.teams()` + `team.roster(day=date)` x N + `league.player_stats(ids, "date", date=yesterday)` |
-| `optimize` | roster + MLB schedule + position analysis |
+| `optimize` | roster + MLB schedule + position analysis + `league.stat_categories()` + `league.player_stats()` across three windows (`season`, `average_season`, `lastmonth`) |
 
 ## Data Format
 
